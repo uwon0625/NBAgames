@@ -3,22 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
-    "cdk": "cdk",
-    "deploy": "cdk deploy",
-    "diff": "cdk diff"
+    "deploy": "aws cloudformation deploy --template-file template.yaml --stack-name nba-live --region us-east-1",
+    "describe": "aws cloudformation describe-stacks --stack-name nba-live --region us-east-1"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.131.0",
-    "constructs": "^10.3.0",
-    "@aws-cdk/aws-apigatewayv2-alpha": "^2.131.0-alpha.0",
-    "@aws-cdk/aws-apigatewayv2-integrations-alpha": "^2.131.0-alpha.0"
+    "@aws-sdk/client-dynamodb": "^3.716.0",
+    "@aws-sdk/lib-dynamodb": "^3.716.0",
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
-    "aws-cdk": "^2.131.0",
-    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
-} 
+}

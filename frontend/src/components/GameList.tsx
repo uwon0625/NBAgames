@@ -8,26 +8,15 @@ interface GameListProps {
   isLoading: boolean;
 }
 
-export const GameList: React.FC<GameListProps> = ({ games, isLoading }) => {
+export const GameList = ({ games, isLoading }: GameListProps) => {
+  console.log('GameList render:', { games, isLoading }); // Debug log
+
   if (isLoading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[1, 2, 3, 4].map((placeholder) => (
-          <div 
-            key={placeholder}
-            className="bg-white rounded-xl shadow-lg h-32 animate-pulse"
-          />
-        ))}
-      </div>
-    );
+    return <div>Loading...</div>;
   }
 
-  if (games.length === 0) {
-    return (
-      <div className="text-center text-gray-500 py-8">
-        No games scheduled
-      </div>
-    );
+  if (!games || games.length === 0) {
+    return <div>No games available</div>;
   }
 
   return (

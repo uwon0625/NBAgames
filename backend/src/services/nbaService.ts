@@ -1,6 +1,9 @@
 import axios from 'axios';
 import { logger } from '../config/logger';
 import { GameBoxScore, PlayerStats, TeamBoxScore, GameScore } from '../types';
+import { createClient } from 'redis';
+import { PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { docClient, TABLE_NAME } from '../config/dynamoDB';
 
 const NBA_BASE_URL = 'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData';
 const NBA_API_URL = `${NBA_BASE_URL}/scoreboard/todaysScoreboard_00.json`;
@@ -13,17 +16,6 @@ const axiosConfig = {
     'Cache-Control': 'no-cache'
   }
 };
-
-// Improved cache interface with box score data
-interface BoxScoreCache {
-  [gameId: string]: {
-    data: GameBoxScore;
-    timestamp: number;
-  }
-}
-
-const boxScoreCache: BoxScoreCache = {};
-const CACHE_TTL = 60 * 1000; // 1 minute cache
 
 // Add interface for NBA game data
 interface NBAGame {
@@ -57,29 +49,286 @@ interface NBAGame {
   };
 }
 
-// Get box score with cache
-async function getBoxScoreWithCache(gameId: string): Promise<GameBoxScore | null> {
-  const now = Date.now();
-  const cached = boxScoreCache[gameId];
+// Add scoreboard cache
+interface ScoreboardCache {
+  data: any;
+  timestamp: number;
+  games: Map<string, GameScore>;
+}
 
-  if (cached && (now - cached.timestamp) < CACHE_TTL) {
-    logger.debug(`Using cached box score for game ${gameId}`);
-    return cached.data;
+let scoreboardCache: ScoreboardCache | null = null;
+const CACHE_TTL = parseInt(process.env.CACHE_TTL || '300000'); // 5 minutes default
+const SCOREBOARD_TTL = parseInt(process.env.SCOREBOARD_TTL || '120000'); // 2 minutes default
+
+// Add new interfaces for DynamoDB items
+interface ScoreboardItem {
+  date: string;
+  type: string;
+  data: any;
+  timestamp: number;
+  games: GameScore[];
+  ttl: number;
+}
+
+interface BoxScoreItem {
+  date: string;
+  type: string;
+  gameId: string;
+  data: GameBoxScore;
+  timestamp: number;
+  ttl: number;
+}
+
+// Add fallback mechanism when Redis is not available
+let isRedisAvailable = false;
+
+// Add URL logging when creating Redis client
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+logger.info('Connecting to Redis at:', redisUrl);
+
+const redisClient = createClient({
+  url: redisUrl,
+  socket: {
+    reconnectStrategy: (retries) => {
+      logger.info(`Redis reconnection attempt ${retries}`);
+      if (retries > 10) {
+        logger.error('Max Redis reconnection attempts reached');
+        return new Error('Max Redis reconnection attempts reached');
+      }
+      return Math.min(retries * 100, 3000);
+    }
   }
+});
+
+redisClient.on('error', err => {
+  logger.error('Redis Client Error:', err);
+  isRedisAvailable = false;
+});
+
+redisClient.on('connect', () => {
+  logger.info('Redis Client Connected');
+  isRedisAvailable = true;
+  // Test Redis connection
+  testRedisConnection();
+});
+
+// Add test function
+async function testRedisConnection() {
+  try {
+    await redisClient.set('test:connection', 'ok', { EX: 60 });
+    const testValue = await redisClient.get('test:connection');
+    logger.info('Redis test successful:', testValue);
+    
+    // List all keys
+    const keys = await redisClient.keys('*');
+    logger.info('Current Redis keys:', keys);
+  } catch (error) {
+    logger.error('Redis test failed:', error);
+  }
+}
+
+// Initialize Redis connection with retries
+async function initRedis() {
+  try {
+    await redisClient.connect();
+    logger.info('Redis Client Connected');
+    isRedisAvailable = true;
+  } catch (err) {
+    logger.error('Redis Connection Error:', err);
+    isRedisAvailable = false;
+  }
+}
+
+// Call initRedis when the service starts
+initRedis().catch(err => {
+  logger.error('Failed to initialize Redis:', err);
+  isRedisAvailable = false;
+});
+
+// Cache keys
+const SCOREBOARD_KEY = 'nba:scoreboard';
+const getBoxScoreKey = (gameId: string) => `nba:boxscore:${gameId}`;
+
+// Add monitoring function
+async function monitorCache() {
+  if (!isRedisAvailable) return;
 
   try {
-    const boxScore = await fetchNBABoxScore(gameId);
-    if (boxScore) {
-      const transformedBoxScore = transformNBABoxScore(boxScore);
-      boxScoreCache[gameId] = {
-        data: transformedBoxScore,
-        timestamp: now
-      };
-      return transformedBoxScore;
+    const keys = await redisClient.keys('nba:*');
+    const details = await Promise.all(
+      keys.map(async key => {
+        const ttl = await redisClient.ttl(key);
+        const value = await redisClient.get(key);
+        return {
+          key,
+          ttl,
+          hasValue: !!value,
+          valueSize: value ? Buffer.byteLength(value) : 0
+        };
+      })
+    );
+
+    logger.info('Cache Monitor:', {
+      totalKeys: keys.length,
+      details
+    });
+  } catch (error) {
+    logger.error('Cache monitoring failed:', error);
+  }
+}
+
+// Add function to save to DynamoDB with better error handling
+async function saveToDatabase(games: GameScore[]) {
+  const now = Date.now();
+  const ttl = Math.floor(now/1000) + (24 * 60 * 60); // 24 hour TTL
+
+  try {
+    logger.info(`Saving games to DynamoDB in region ${process.env.AWS_REGION}`);
+    await docClient.send(new PutCommand({
+      TableName: TABLE_NAME,
+      Item: {
+        date: new Date().toISOString().split('T')[0],
+        type: 'scoreboard',
+        games,
+        timestamp: now,
+        ttl
+      }
+    }));
+    logger.info('Successfully saved games to DynamoDB');
+  } catch (error) {
+    logger.error('Failed to save to DynamoDB:', error, {
+      region: process.env.AWS_REGION,
+      tableName: TABLE_NAME
+    });
+  }
+}
+
+// Add function to load from DynamoDB
+async function loadFromDatabase(): Promise<GameScore[] | null> {
+  try {
+    const result = await docClient.send(new GetCommand({
+      TableName: TABLE_NAME,
+      Key: {
+        date: new Date().toISOString().split('T')[0],
+        type: 'scoreboard'
+      }
+    }));
+
+    if (result.Item) {
+      logger.info('Retrieved games from DynamoDB');
+      return result.Item.games;
     }
     return null;
   } catch (error) {
-    logger.error(`Error fetching box score for game ${gameId}:`, error);
+    logger.error('Failed to load from DynamoDB:', error);
+    return null;
+  }
+}
+
+// Update getScoreboardFromCache with multi-level caching
+async function getScoreboardFromCache(): Promise<GameScore[]> {
+  try {
+    // Monitor cache before operation
+    await monitorCache();
+
+    if (!isRedisAvailable) {
+      logger.warn('Redis not available, trying DynamoDB');
+      const dbGames = await loadFromDatabase();
+      if (dbGames) {
+        return dbGames;
+      }
+      logger.warn('No data in DynamoDB, fetching from API');
+    }
+
+    try {
+      // Try Redis first
+      const cached = await redisClient.get(SCOREBOARD_KEY);
+      if (cached) {
+        logger.info('Using cached scoreboard data from Redis');
+        const games = JSON.parse(cached);
+        logger.info(`Retrieved ${games.length} games from Redis cache`);
+        return games;
+      }
+
+      // Try DynamoDB if Redis cache miss
+      logger.info('Redis cache miss, trying DynamoDB');
+      const dbGames = await loadFromDatabase();
+      if (dbGames) {
+        // Store in Redis for next time
+        await redisClient.set(SCOREBOARD_KEY, JSON.stringify(dbGames), {
+          EX: SCOREBOARD_TTL / 1000
+        });
+        logger.info('Loaded from DynamoDB and cached in Redis');
+        return dbGames;
+      }
+    } catch (cacheError) {
+      logger.error('Cache operation failed:', cacheError);
+    }
+
+    // If both caches miss, fetch from API
+    logger.info('Cache miss, fetching fresh scoreboard data from API');
+    const response = await axios.get(NBA_API_URL, axiosConfig);
+    const games = response.data.scoreboard.games.map((game: NBAGame) => transformNBAGame(game));
+    logger.info(`Fetched ${games.length} games from API`);
+
+    try {
+      // Store in both Redis and DynamoDB
+      const setResult = await redisClient.set(SCOREBOARD_KEY, JSON.stringify(games), {
+        EX: SCOREBOARD_TTL / 1000
+      });
+      logger.info(`Redis SET operation result: ${setResult}`);
+      logger.info(`Cached ${games.length} games in Redis with TTL: ${SCOREBOARD_TTL/1000}s`);
+      
+      // Save to DynamoDB in background
+      saveToDatabase(games).catch(err => 
+        logger.error('Background DynamoDB save failed:', err)
+      );
+
+      // Monitor cache after operation
+      await monitorCache();
+    } catch (cacheError) {
+      logger.error('Cache operation failed:', cacheError);
+    }
+
+    return games;
+  } catch (error) {
+    logger.error('Failed to get scoreboard:', error);
+    throw error;
+  }
+}
+
+async function cacheBoxScore(gameId: string): Promise<GameBoxScore | null> {
+  try {
+    const boxScore = await fetchNBABoxScore(gameId);
+    if (!boxScore) return null;
+
+    const transformedBoxScore = transformNBABoxScore(boxScore);
+    
+    // Cache the transformed box score
+    await redisClient.set(
+      getBoxScoreKey(gameId), 
+      JSON.stringify(transformedBoxScore),
+      { EX: CACHE_TTL / 1000 }
+    );
+
+    return transformedBoxScore;
+  } catch (error) {
+    logger.error(`Failed to cache box score for game ${gameId}:`, error);
+    return null;
+  }
+}
+
+export async function getGameBoxScore(gameId: string): Promise<GameBoxScore | null> {
+  try {
+    // Try to get from cache
+    const cached = await redisClient.get(getBoxScoreKey(gameId));
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    return await cacheBoxScore(gameId);
+  } catch (error) {
+    logger.error(`Failed to get box score for game ${gameId}:`, error);
     return null;
   }
 }
@@ -88,59 +337,18 @@ async function getBoxScoreWithCache(gameId: string): Promise<GameBoxScore | null
 async function prefetchBoxScores(games: NBAGame[]): Promise<void> {
   logger.debug('Prefetching box scores for all games');
   await Promise.all(
-    games.map(game => getBoxScoreWithCache(game.gameId))
+    games.map(game => cacheBoxScore(game.gameId))
   );
 }
 
-// Get team stats from cache if available
-function getTeamStatsFromCache(gameId: string, isHome: boolean): any {
-  const cached = boxScoreCache[gameId];
-  if (cached) {
-    const team = isHome ? cached.data.homeTeam : cached.data.awayTeam;
-    return team.stats;
-  }
-  return null;
-}
-
+// Update getGames to use Redis cache
 export async function getGames(): Promise<GameScore[]> {
   try {
-    const scoreboard = await fetchNBAScoreboard();
-    if (!scoreboard?.games) {
-      logger.warn('No games data in scoreboard');
-      return [];
-    }
-
-    // Prefetch box scores in the background
-    prefetchBoxScores(scoreboard.games).catch(error => 
-      logger.error('Error prefetching box scores:', error)
-    );
-
-    // Transform games with cached stats when available
-    return scoreboard.games.map((game: NBAGame) => {
-      const transformed = transformNBAGame(game);
-      const homeStats = getTeamStatsFromCache(game.gameId, true);
-      const awayStats = getTeamStatsFromCache(game.gameId, false);
-
-      return {
-        ...transformed,
-        homeTeam: {
-          ...transformed.homeTeam,
-          stats: homeStats || transformed.homeTeam.stats
-        },
-        awayTeam: {
-          ...transformed.awayTeam,
-          stats: awayStats || transformed.awayTeam.stats
-        }
-      };
-    });
+    return await getScoreboardFromCache();
   } catch (error) {
     logger.error('Failed to get games:', error);
     throw error;
   }
-}
-
-export async function getGameBoxScore(gameId: string): Promise<GameBoxScore | null> {
-  return getBoxScoreWithCache(gameId);
 }
 
 export async function fetchNBAScoreboard() {
@@ -306,6 +514,44 @@ export async function fetchGameById(gameId: string) {
   } catch (error) {
     logger.error(`Failed to fetch game ${gameId}:`, error);
     throw error;
+  }
+}
+
+export async function fetchLiveGames(): Promise<GameScore[]> {
+  try {
+    const games = await getGames();
+    return games.filter(game => game.status === 'live');
+  } catch (error) {
+    logger.error('Failed to fetch live games:', error);
+    throw error;
+  }
+}
+
+// Add function to verify cache status
+export async function getCacheStatus() {
+  if (!isRedisAvailable) {
+    return { status: 'Redis not connected' };
+  }
+
+  try {
+    const keys = await redisClient.keys('nba:*');
+    const ttls = await Promise.all(
+      keys.map(async key => ({
+        key,
+        ttl: await redisClient.ttl(key)
+      }))
+    );
+
+    return {
+      status: 'connected',
+      keys: ttls
+    };
+  } catch (error: unknown) {
+    logger.error('Failed to get cache status:', error);
+    if (error instanceof Error) {
+      return { status: 'error', message: error.message };
+    }
+    return { status: 'error', message: 'An unknown error occurred' };
   }
 }
 

@@ -28,14 +28,17 @@ export default function Home() {
   useEffect(() => {
     const fetchGames = async () => {
       try {
-        setError(null);
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/games`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        setIsLoading(true);
+        const response = await fetch('http://localhost:3001/api/games');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const data = await response.json();
+        console.log('Fetched games:', data);
         setGames(data);
       } catch (error) {
         console.error('Error fetching games:', error);
-        setError('Failed to load games. Please try again later.');
+        setError('Failed to load games');
       } finally {
         setIsLoading(false);
       }

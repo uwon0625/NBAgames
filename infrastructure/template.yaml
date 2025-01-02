@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'NBA Live DynamoDB Table'
+
+Resources:
+  NBAGamesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: nba-games
+      AttributeDefinitions:
+        - AttributeName: date
+          AttributeType: S
+        - AttributeName: type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: date
+          KeyType: HASH
+        - AttributeName: type
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+Outputs:
+  TableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref NBAGamesTable 

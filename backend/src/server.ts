@@ -7,6 +7,7 @@ import { logger } from './config/logger';
 import gameRoutes from './routes/gameRoutes';
 import { ExtendedWebSocket, ExtendedWebSocketServer } from './types/websocket';
 import { clients } from './services/websocketService';
+import apiRouter from './routes/api';
 
 const app = express();
 const server = createServer(app);
