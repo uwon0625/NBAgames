@@ -4,6 +4,7 @@ Description: 'NBA Live DynamoDB Table'
 Resources:
   NBAGamesTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
     Properties:
       TableName: nba-games
       AttributeDefinitions:
@@ -24,4 +25,5 @@ Resources:
 Outputs:
   TableName:
     Description: Name of the DynamoDB table
-    Value: !Ref NBAGamesTable 
+    Value: 
+      Ref: NBAGamesTable 
