@@ -1,17 +1,19 @@
+export interface TeamStats {
+  rebounds: number;
+  assists: number;
+  blocks: number;
+}
+
 export interface Team {
   teamId: string;
   name: string;
   score: number;
-  stats?: {
-    rebounds: number;
-    assists: number;
-    blocks: number;
-  };
+  stats: TeamStats;
 }
 
 export interface GameScore {
   gameId: string;
-  status: 'scheduled' | 'live' | 'final';
+  status: string;
   period: number;
   clock: string;
   homeTeam: Team;

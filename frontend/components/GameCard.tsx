@@ -1,6 +1,4 @@
-'use client';
-
-import { GameScore } from '../types';
+import { GameScore } from '@/types';
 
 interface GameCardProps {
   game: GameScore;

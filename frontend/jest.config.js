@@ -1,3 +1,6 @@
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 const nextJest = require('next/jest');
 
 const createJestConfig = nextJest({
@@ -10,6 +13,7 @@ const customJestConfig = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
+  moduleDirectories: ['node_modules', '<rootDir>/src'],
 };
 
-module.exports = createJestConfig(customJestConfig); 
+export default createJestConfig(customJestConfig); 
