@@ -1,0 +1,42 @@
+{
+    "git.ignoreLimitWarning": true,
+    "cSpell.enabled": false,
+    "cSpell.words": [
+        "kafkajs",
+        "eventbridge",
+        "dynamodb",
+        "headlessui",
+        "heroicons",
+        "tailwindcss",
+        "typeorm",
+        "websockets",
+        "imdsv2",
+        "codepipeline",
+        "codedeploy",
+        "redshift"
+    ],
+    "cSpell.ignorePaths": [
+        "package-lock.json",
+        "node_modules",
+        "vscode-extension",
+        ".git",
+        "*.lock",
+        "infrastructure/**",
+        "backend/dist/**"
+    ],
+    "#cSpell.enableFiletypes": [
+        "markdown",
+        "plaintext"
+    ],
+    "typescript.tsdk": "node_modules/typescript/lib",
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit"
+    },
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/node_modules": true,
+        "**/dist": true,
+        "**/*.js.map": true
+    }
+}

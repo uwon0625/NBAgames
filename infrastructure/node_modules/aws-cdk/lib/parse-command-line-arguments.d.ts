@@ -1,0 +1,1 @@
+export declare function parseCommandLineArguments(args: Array<string>, browserDefault: string, availableInitLanguages: Array<string>, migrateSupportedLanguages: Array<string>, version: string, yargsNegativeAlias: any): any;
