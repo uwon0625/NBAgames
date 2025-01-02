@@ -2,11 +2,13 @@
   "name": "nba-live-backend",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "test": "jest"
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.716.0",
