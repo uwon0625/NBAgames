@@ -4,21 +4,25 @@ export interface TeamStats {
   blocks: number;
 }
 
-export interface Team {
-  teamId: string;
+export interface BaseTeam {
+  id: string;
   name: string;
   score: number;
-  stats: TeamStats;
+}
+
+export interface GameTeam extends BaseTeam {
+  abbreviation?: string;
+  stats?: TeamStats;
 }
 
 export interface GameScore {
   gameId: string;
-  status: string;
+  status: 'scheduled' | 'in_progress' | 'finished';
+  startTime: string | null;
   period: number;
   clock: string;
-  homeTeam: Team;
-  awayTeam: Team;
-  lastUpdate: number;
+  homeTeam: GameTeam;
+  awayTeam: GameTeam;
 }
 
 export interface GameAlert {
@@ -47,8 +51,9 @@ export interface PlayerStats {
   plusMinus: number;
 }
 
-export interface TeamBoxScore extends Team {
+export interface TeamBoxScore extends BaseTeam {
   players: PlayerStats[];
+  stats: TeamStats;
   totals: {
     points: number;
     rebounds: number;
@@ -64,7 +69,12 @@ export interface TeamBoxScore extends Team {
   };
 }
 
-export interface GameBoxScore extends GameScore {
+export interface GameBoxScore {
+  gameId: string;
+  status: 'scheduled' | 'in_progress' | 'finished';
+  startTime: string | null;
+  period: number;
+  clock: string;
   homeTeam: TeamBoxScore;
   awayTeam: TeamBoxScore;
   arena?: string;

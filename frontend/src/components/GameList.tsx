@@ -1,16 +1,15 @@
 'use client';
 
-import { GameScore } from '@/types';
+import React from 'react';
 import { GameCard } from './GameCard';
+import { Game } from '../types/Game';
 
 interface GameListProps {
-  games: GameScore[];
-  isLoading: boolean;
+  games: Game[];
+  isLoading?: boolean;
 }
 
-export const GameList = ({ games, isLoading }: GameListProps) => {
-  console.log('GameList render:', { games, isLoading }); // Debug log
-
+export const GameList: React.FC<GameListProps> = ({ games, isLoading = false }) => {
   if (isLoading) {
     return <div>Loading...</div>;
   }
@@ -20,10 +19,13 @@ export const GameList = ({ games, isLoading }: GameListProps) => {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {games.map(game => (
-        <GameCard key={game.gameId} game={game} />
-      ))}
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">NBA Games</h1>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {games.map((game) => (
+          <GameCard key={game.id} game={game} />
+        ))}
+      </div>
     </div>
   );
 }; 

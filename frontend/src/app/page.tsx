@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { GameList } from '@/components/GameList';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { GameScore } from '@/types';
+import { Game } from '@/types/Game';
 
 export default function Home() {
-  const [games, setGames] = useState<GameScore[]>([]);
+  const [games, setGames] = useState<Game[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDisconnected, setShowDisconnected] = useState(false);
@@ -14,9 +15,39 @@ export default function Home() {
   const handleGameUpdate = (updatedGame: GameScore) => {
     setGames(prevGames => 
       prevGames.map(game => 
-        game.gameId === updatedGame.gameId ? updatedGame : game
+        game.id === updatedGame.gameId ? convertGameScoreToGame(updatedGame) : game
       )
     );
+  };
+
+  const convertGameScoreToGame = (gameScore: GameScore): Game => {
+    const validStatus: Game['status'] = 
+      gameScore.status === 'scheduled' || 
+      gameScore.status === 'in_progress' || 
+      gameScore.status === 'finished' 
+        ? gameScore.status 
+        : 'scheduled';
+
+    return {
+      id: gameScore.gameId,
+      status: validStatus,
+      startTime: gameScore.startTime || '',
+      period: gameScore.period ? `Q${gameScore.period} ${gameScore.clock}` : '',
+      homeTeam: {
+        id: gameScore.homeTeam.id,
+        name: gameScore.homeTeam.name,
+        abbreviation: gameScore.homeTeam.abbreviation || gameScore.homeTeam.name.substring(0, 3).toUpperCase()
+      },
+      awayTeam: {
+        id: gameScore.awayTeam.id,
+        name: gameScore.awayTeam.name,
+        abbreviation: gameScore.awayTeam.abbreviation || gameScore.awayTeam.name.substring(0, 3).toUpperCase()
+      },
+      homeTeamScore: gameScore.homeTeam.score,
+      awayTeamScore: gameScore.awayTeam.score,
+      homeTeamStats: gameScore.homeTeam.stats,
+      awayTeamStats: gameScore.awayTeam.stats
+    };
   };
 
   const handleConnectionChange = (connected: boolean) => {
@@ -33,9 +64,9 @@ export default function Home() {
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const data = await response.json();
+        const data: GameScore[] = await response.json();
         console.log('Fetched games:', data);
-        setGames(data);
+        setGames(data.map(convertGameScoreToGame));
       } catch (error) {
         console.error('Error fetching games:', error);
         setError('Failed to load games');
