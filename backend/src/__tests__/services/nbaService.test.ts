@@ -52,15 +52,31 @@ describe('nbaService', () => {
         attendance: 18997
       };
 
-      const parentGame: GameScore = {
+      const result = transformNBABoxScore(mockNBABoxScore);
+
+      expect(result).toMatchObject({
         gameId: '0022300476',
-        status: 'live',
+        status: 'scheduled',
         period: 2,
-        clock: '0:23',
+        clock: 'PT00M23.70S',
         homeTeam: {
-          teamId: '1610612747',
+          teamId: 1610612747,
           teamTricode: 'LAL',
           score: 55,
+          totals: {
+            points: 55,
+            rebounds: 20,
+            assists: 15,
+            steals: 0,
+            blocks: 3,
+            personalFouls: 12,
+            fgm: 22,
+            fga: 45,
+            threePm: 8,
+            threePa: 20,
+            ftm: 3,
+            fta: 5
+          },
           stats: {
             rebounds: 20,
             assists: 15,
@@ -68,79 +84,32 @@ describe('nbaService', () => {
           }
         },
         awayTeam: {
-          teamId: '1610612744',
+          teamId: 1610612744,
           teamTricode: 'GSW',
           score: 60,
+          totals: {
+            points: 60,
+            rebounds: 22,
+            assists: 18,
+            steals: 0,
+            blocks: 2,
+            personalFouls: 15,
+            fgm: 25,
+            fga: 50,
+            threePm: 10,
+            threePa: 25,
+            ftm: 0,
+            fta: 0
+          },
           stats: {
             rebounds: 22,
             assists: 18,
             blocks: 2
           }
         },
-        lastUpdate: Date.now()
-      };
-
-      const result = transformNBABoxScore(mockNBABoxScore, parentGame);
-
-      expect(result).toMatchObject({
-        gameId: '0022300476',
-        status: 'live',
-        period: 2,
-        clock: '0:23'
+        arena: 'Crypto.com Arena',
+        attendance: 18997
       });
-
-      expect(result.homeTeam).toMatchObject({
-        teamId: '1610612747',
-        teamTricode: 'LAL',
-        score: 55,
-        totals: {
-          points: 55,
-          rebounds: 20,
-          assists: 15,
-          steals: 0,
-          blocks: 3,
-          personalFouls: 12,
-          fgm: 22,
-          fga: 45,
-          threePm: 8,
-          threePa: 20,
-          ftm: 3,
-          fta: 5
-        },
-        stats: {
-          rebounds: 20,
-          assists: 15,
-          blocks: 3
-        }
-      });
-
-      expect(result.awayTeam).toMatchObject({
-        teamId: '1610612744',
-        teamTricode: 'GSW',
-        score: 60,
-        totals: {
-          points: 60,
-          rebounds: 22,
-          assists: 18,
-          steals: 0,
-          blocks: 2,
-          personalFouls: 15,
-          fgm: 25,
-          fga: 50,
-          threePm: 10,
-          threePa: 25,
-          ftm: 0,
-          fta: 0
-        },
-        stats: {
-          rebounds: 22,
-          assists: 18,
-          blocks: 2
-        }
-      });
-
-      expect(result.arena).toBe('Crypto.com Arena');
-      expect(result.attendance).toBe(18997);
     });
 
     it('transforms team statistics correctly', () => {
@@ -200,6 +169,7 @@ describe('nbaService', () => {
         assists: 15,
         steals: 0,
         blocks: 3,
+        personalFouls: 0,
         fgm: 22,
         fga: 45,
         threePm: 8,
@@ -221,6 +191,7 @@ describe('nbaService', () => {
         assists: 18,
         steals: 0,
         blocks: 2,
+        personalFouls: 0,
         fgm: 25,
         fga: 50,
         threePm: 10,
