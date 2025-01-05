@@ -1,24 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { GameBoxScore, Game } from '@/types/Game';
 import { BoxScore } from '@/components/BoxScore';
-import { fetchGame } from '@/services/api';
+import { useSearchParams } from 'next/navigation';
 
 export default function BoxScorePage({ params }: { params: { gameId: string } }) {
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Get the gameId from the URL params
-  const gameId = params.gameId;
-
-  if (!gameId) {
-    return <div className="p-8 text-center">Invalid game ID</div>;
-  }
+  const searchParams = useSearchParams();
+  const status = searchParams.get('status');
+  const period = searchParams.get('period');
+  const clock = searchParams.get('clock');
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <BoxScore gameId={gameId} />
+      <BoxScore 
+        gameId={params.gameId} 
+        status={status}
+        period={period ? parseInt(period) : undefined}
+        clock={clock || undefined}
+      />
     </div>
   );
 } 

@@ -11,22 +11,32 @@ interface GameCardProps {
 export const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const router = useContext(RouterContext);
 
-  const handleClick = async () => {
+  const handleClick = () => {
     try {
-      await router.push(`/games/${game.gameId}`);
+      if (router) {
+        router.push(`/games/${game.gameId}`);
+      } else {
+        window.location.href = `/games/${game.gameId}`;
+      }
     } catch (error) {
       console.error('Navigation failed:', error);
+      window.location.href = `/games/${game.gameId}`;
     }
   };
 
   const handleBoxScoreClick = async (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering the card click
     if (game.status !== 'scheduled') {
+      const boxScoreUrl = `/games/${game.gameId}/boxscore?status=${game.status}&period=${game.period}&clock=${encodeURIComponent(game.clock)}`;
       try {
-        const boxScoreUrl = `/games/${game.gameId}/boxscore`;
-        await router.push(boxScoreUrl);
+        if (router) {
+          router.push(boxScoreUrl);
+        } else {
+          window.location.href = boxScoreUrl;
+        }
       } catch (error) {
         console.error('Navigation to box score failed:', error);
+        window.location.href = boxScoreUrl;
       }
     }
   };
