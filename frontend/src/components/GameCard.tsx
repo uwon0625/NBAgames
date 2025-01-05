@@ -24,19 +24,9 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
     if (game.status !== 'scheduled') {
       try {
         const boxScoreUrl = `/games/${game.gameId}/boxscore`;
-        console.log('Navigating to:', boxScoreUrl);
-        
-        // Try Next.js router first
         await router.push(boxScoreUrl);
-        
-        // If router fails or doesn't navigate, use window.location
-        if (window.location.pathname !== boxScoreUrl) {
-          window.location.href = boxScoreUrl;
-        }
       } catch (error) {
         console.error('Navigation to box score failed:', error);
-        // Fallback to window.location
-        window.location.href = `/games/${game.gameId}/boxscore`;
       }
     }
   };
@@ -85,7 +75,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
         data-testid={`game-card-${game.gameId}`}
       >
         {/* Stats Header */}
-        <div className="grid grid-cols-8 text-xs text-gray-500 mb-2">
+        <div data-testid="stats-container" className="grid grid-cols-8 text-xs text-gray-500 mb-2">
           <div className="col-span-2"></div>
           <div className="col-span-3 grid grid-cols-2 gap-1 pl-8">
             <div>TEAM</div>
