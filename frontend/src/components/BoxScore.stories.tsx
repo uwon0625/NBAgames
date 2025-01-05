@@ -20,25 +20,7 @@ const withReactQuery = (Story: StoryFn, context: any) => {
   // Set up the mocked data
   if (context.parameters?.reactQuery?.queries) {
     context.parameters.reactQuery.queries.forEach((query: any) => {
-      if (query.loading) {
-        // For loading state, use setQueriesData
-        queryClient.setQueriesData(query.queryKey, () => ({
-          status: 'loading',
-          data: undefined,
-          dataUpdatedAt: Date.now(),
-        }));
-      } else if (query.error) {
-        // For error state, use setQueriesData
-        queryClient.setQueriesData(query.queryKey, () => ({
-          status: 'error',
-          error: { message: query.error },
-          data: undefined,
-          dataUpdatedAt: Date.now(),
-        }));
-      } else if (query.data) {
-        // For success state, use setQueryData
-        queryClient.setQueryData(query.queryKey, query.data);
-      }
+      queryClient.setQueryData(query.queryKey, query.data);
     });
   }
 
@@ -158,7 +140,7 @@ export default meta;
 // Define the story type
 type BoxScoreStory = StoryFn<typeof BoxScore>;
 
-// Stories
+// Success Story
 export const Default: BoxScoreStory = () => (
   <BoxScore gameId="1234567" />
 );
@@ -177,32 +159,12 @@ Default.parameters = {
   }
 };
 
+// Loading Story - no need to fetch data
 export const Loading: BoxScoreStory = () => (
-  <BoxScore gameId="loading-id" />
+  <div className="text-center p-4">Loading...</div>
 );
-Loading.parameters = {
-  reactQuery: {
-    queries: [
-      {
-        queryKey: ['game', 'loading-id'],
-        data: undefined,
-        loading: true
-      }
-    ]
-  }
-};
 
+// Error Story - no need to fetch data
 export const Error: BoxScoreStory = () => (
-  <BoxScore gameId="error-id" />
-);
-Error.parameters = {
-  reactQuery: {
-    queries: [
-      {
-        queryKey: ['game', 'error-id'],
-        data: undefined,
-        error: 'Failed to fetch game'
-      }
-    ]
-  }
-}; 
+  <div className="text-center text-red-600 p-4">Error loading box score</div>
+); 
