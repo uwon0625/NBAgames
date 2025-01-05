@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { GameScore } from '@/types';
+import { GameScore, GameAlert } from '@/types';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001/ws';
 const HEARTBEAT_INTERVAL = 10000;
@@ -10,7 +10,8 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 
 export const useWebSocket = (
   onGameUpdate: (game: GameScore) => void,
-  onConnectionChange?: (connected: boolean) => void
+  onConnectionChange: (connected: boolean) => void,
+  onGameAlert?: (alert: GameAlert) => void,
 ) => {
   const [isConnected, setIsConnected] = useState(false);
   const ws = useRef<WebSocket | null>(null);
@@ -54,7 +55,7 @@ export const useWebSocket = (
 
         console.log('WebSocket connected');
         setIsConnected(true);
-        onConnectionChange?.(true);
+        onConnectionChange(true);
         reconnectAttempts.current = 0;
 
         // Start heartbeat
@@ -71,7 +72,7 @@ export const useWebSocket = (
 
         console.log(`WebSocket disconnected: ${event.code}`);
         setIsConnected(false);
-        onConnectionChange?.(false);
+        onConnectionChange(false);
         cleanup();
 
         if (mounted.current && reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
@@ -87,8 +88,20 @@ export const useWebSocket = (
         if (!mounted.current) return;
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'game-update' && data.game) {
-            onGameUpdate(data.game);
+          switch (data.type) {
+            case 'GAME_UPDATE':
+              onGameUpdate(data.data);
+              break;
+            case 'GAME_ALERT':
+              onGameAlert?.(data.data);
+              break;
+            case 'connection-ack':
+              setIsConnected(true);
+              onConnectionChange(true);
+              break;
+            case 'pong':
+              // Handle heartbeat response
+              break;
           }
         } catch (error) {
           console.error('Failed to parse message:', error);

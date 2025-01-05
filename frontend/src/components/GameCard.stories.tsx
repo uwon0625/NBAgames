@@ -16,98 +16,133 @@ type Story = StoryObj<typeof meta>;
 export const InProgress: Story = {
   args: {
     game: {
-      id: '1',
-      status: 'in_progress',
-      period: 'Q2 5:30',
-      startTime: '2024-03-20T19:00:00Z',
+      gameId: '1',
+      status: 'live' as const,
+      period: 2,
+      clock: '5:30',
       homeTeam: {
-        id: '1',
-        name: 'Los Angeles Lakers',
-        abbreviation: 'LAL',
+        teamId: '1610612747',
+        teamTricode: 'LAL',
+        score: 58,
+        stats: {
+          rebounds: 20,
+          assists: 15,
+          blocks: 3
+        }
       },
       awayTeam: {
-        id: '2',
-        name: 'Boston Celtics',
-        abbreviation: 'BOS',
+        teamId: '1610612738',
+        teamTricode: 'BOS',
+        score: 62,
+        stats: {
+          rebounds: 22,
+          assists: 18,
+          blocks: 2
+        }
       },
-      homeTeamScore: 58,
-      awayTeamScore: 62,
-      homeTeamStats: {
-        rebounds: 20,
-        assists: 15,
-        blocks: 3,
-      },
-      awayTeamStats: {
-        rebounds: 22,
-        assists: 18,
-        blocks: 2,
-      },
-    },
-  },
+      lastUpdate: Date.now()
+    }
+  }
 };
 
 export const Scheduled: Story = {
   args: {
     game: {
-      id: '2',
+      gameId: '2',
       status: 'scheduled',
-      period: '',
-      startTime: '2024-03-21T00:30:00Z',
+      period: 0,
+      clock: '',
       homeTeam: {
-        id: '3',
+        teamId: '3',
         name: 'Golden State Warriors',
         abbreviation: 'GSW',
+        score: 0,
+        stats: {
+          rebounds: 0,
+          assists: 0,
+          blocks: 0
+        }
       },
       awayTeam: {
-        id: '4',
+        teamId: '4',
         name: 'Phoenix Suns',
         abbreviation: 'PHX',
+        score: 0,
+        stats: {
+          rebounds: 0,
+          assists: 0,
+          blocks: 0
+        }
       },
-      homeTeamScore: 0,
-      awayTeamScore: 0,
-      homeTeamStats: {
-        rebounds: 0,
-        assists: 0,
-        blocks: 0,
-      },
-      awayTeamStats: {
-        rebounds: 0,
-        assists: 0,
-        blocks: 0,
-      },
-    },
-  },
+      lastUpdate: Date.now()
+    }
+  }
 };
 
-export const Finished: Story = {
+export const Final: Story = {
   args: {
     game: {
-      id: '3',
-      status: 'finished',
-      period: 'Final',
-      startTime: '2024-03-20T00:00:00Z',
+      gameId: '3',
+      status: 'final',
+      period: 4,
+      clock: '',
       homeTeam: {
-        id: '5',
+        teamId: '5',
         name: 'Milwaukee Bucks',
         abbreviation: 'MIL',
+        score: 112,
+        stats: {
+          rebounds: 45,
+          assists: 25,
+          blocks: 5
+        }
       },
       awayTeam: {
-        id: '6',
+        teamId: '6',
         name: 'Miami Heat',
         abbreviation: 'MIA',
+        score: 108,
+        stats: {
+          rebounds: 40,
+          assists: 22,
+          blocks: 3
+        }
       },
-      homeTeamScore: 112,
-      awayTeamScore: 108,
-      homeTeamStats: {
-        rebounds: 45,
-        assists: 25,
-        blocks: 5,
+      lastUpdate: Date.now()
+    }
+  }
+};
+
+export const Default: Story = {
+  args: {
+    game: {
+      gameId: '1',
+      status: 'live',
+      period: 2,
+      clock: '5:30',
+      homeTeam: {
+        teamId: '1',
+        name: 'Los Angeles Lakers',
+        abbreviation: 'LAL',
+        score: 58,
+        stats: {
+          rebounds: 20,
+          assists: 15,
+          blocks: 3
+        }
       },
-      awayTeamStats: {
-        rebounds: 40,
-        assists: 22,
-        blocks: 3,
+      awayTeam: {
+        teamId: '2',
+        name: 'Boston Celtics',
+        abbreviation: 'BOS',
+        score: 62,
+        stats: {
+          rebounds: 22,
+          assists: 18,
+          blocks: 2
+        }
       },
-    },
-  },
+      lastUpdate: Date.now()
+    }
+  }
 }; 

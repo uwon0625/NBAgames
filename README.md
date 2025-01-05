@@ -2,10 +2,10 @@
 NBA live score and alerts, it pulls most recent/scheduled games, with box score for the games. It also provides live updates.
 
 # Technology Stack
- - frontend:  Next.js v15.1.3(React v19.0.0), TypeScript, Tailwind CSS.
- - backend:  Docker, Kafka, NestJS, Express, CORS, WebSocket, Redis, AWS DynamoDB, Lambda, EventBridge, SQS, Restful API.
+ - frontend:  Next.js v14.1.0(React v18.2.0), TypeScript, Tailwind CSS, Storybook v7.6.17.
+ - backend:  Docker, Kafka, NestJS, Express, CORS, WebSocket, Redis, AWS SDK V3, AWS DynamoDB, Lambda, EventBridge, SQS, Restful API.
  - infrastructure: AWS CDK(IAM, CloudFormation, DynamoDB).
- - unit tests: Jest v29.5.11.
+ - unit tests: Jest v29.7.0.
 
 # Data flow
 1. Check Redis first (fastest)

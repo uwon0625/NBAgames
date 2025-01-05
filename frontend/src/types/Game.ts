@@ -1,24 +1,82 @@
-export interface Team {
-  id: string;
-  name: string;
-  abbreviation: string;
-}
-
 export interface TeamStats {
   rebounds: number;
   assists: number;
   blocks: number;
 }
 
+export interface Team {
+  teamId: string;
+  teamTricode: string;
+  score: number;
+  stats: TeamStats;
+}
+
 export interface Game {
-  id: string;
-  status: 'scheduled' | 'in_progress' | 'finished';
-  startTime: string;
-  period: string;
+  gameId: string;
+  status: 'scheduled' | 'live' | 'final';
+  period: number;
+  clock: string;
   homeTeam: Team;
   awayTeam: Team;
-  homeTeamScore: number;
-  awayTeamScore: number;
-  homeTeamStats?: TeamStats;
-  awayTeamStats?: TeamStats;
+  lastUpdate: number;
+}
+
+export interface PlayerStats {
+  playerId: string;
+  name: string;
+  position: string;
+  minutes: string;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  personalFouls: number;
+  fgm: number;
+  fga: number;
+  threePm: number;
+  threePa: number;
+  ftm: number;
+  fta: number;
+  plusMinus: number;
+}
+
+export interface TeamBoxScore {
+  id: string;
+  teamId: string;
+  teamTricode: string;
+  score: number;
+  players: PlayerStats[];
+  totals: TeamTotals;
+  stats: TeamStats;
+}
+
+export interface TeamTotals {
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  blocks: number;
+  personalFouls: number;
+  fgm: number;
+  fga: number;
+  threePm: number;
+  threePa: number;
+  ftm: number;
+  fta: number;
+}
+
+export type GameStatus = 'scheduled' | 'in_progress' | 'finished';
+
+export interface GameBoxScore {
+  gameId: string;
+  status: GameStatus;
+  period: number;
+  clock: string;
+  startTime: string;
+  homeTeam: TeamBoxScore;
+  awayTeam: TeamBoxScore;
+  arena?: string;
+  attendance?: number;
+  lastUpdate: number;
 } 

@@ -10,7 +10,7 @@ export const mockServices = {
     clock: '0:00',
     homeTeam: {
       teamId: 'LAL',
-      name: 'Los Angeles Lakers',
+      teamTricode: 'LAL',
       score: 120,
       players: [],
       totals: {
@@ -24,7 +24,8 @@ export const mockServices = {
         threePm: 12,
         threePa: 30,
         ftm: 18,
-        fta: 22
+        fta: 22,
+        personalFouls: 15
       },
       stats: {
         rebounds: 40,
@@ -34,7 +35,7 @@ export const mockServices = {
     },
     awayTeam: {
       teamId: 'GSW',
-      name: 'Golden State Warriors',
+      teamTricode: 'GSW',
       score: 110,
       players: [],
       totals: {
@@ -48,7 +49,8 @@ export const mockServices = {
         threePm: 15,
         threePa: 35,
         ftm: 11,
-        fta: 14
+        fta: 14,
+        personalFouls: 18
       },
       stats: {
         rebounds: 38,

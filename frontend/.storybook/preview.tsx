@@ -1,5 +1,7 @@
+import React from 'react';
 import type { Preview } from "@storybook/react";
-import '@/app/globals.css';
+import '../src/app/globals.css';
+import { RouterDecorator } from './mockNextRouter';
 
 const preview: Preview = {
   parameters: {
@@ -7,13 +9,11 @@ const preview: Preview = {
     controls: {
       matchers: {
         color: /(background|color)$/i,
-        date: /Date$/i,
+        date: /Date$/,
       },
     },
-    nextjs: {
-      appDirectory: true,
-    },
   },
+  decorators: [RouterDecorator],
 };
 
 export default preview; 

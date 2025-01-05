@@ -1,90 +1,165 @@
 'use client';
 
-import React from 'react';
+import React, { useContext } from 'react';
 import { Game } from '@/types/Game';
+import { RouterContext } from '@/utils/RouterContext';
 
 interface GameCardProps {
   game: Game;
 }
 
 export const GameCard: React.FC<GameCardProps> = ({ game }) => {
-  const isGameActive = game.status === 'in_progress' || game.status === 'finished';
+  const router = useContext(RouterContext);
 
-  const formatGameTime = (startTime: string) => {
-    const date = new Date(startTime);
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit',
-      hour12: true 
-    });
+  const handleClick = async () => {
+    try {
+      await router.push(`/games/${game.gameId}`);
+    } catch (error) {
+      console.error('Navigation failed:', error);
+    }
   };
 
-  const getGameStatus = () => {
-    if (game.status === 'scheduled') return formatGameTime(game.startTime);
-    if (game.status === 'finished') return 'Final';
-    return game.period;
+  const handleBoxScoreClick = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering the card click
+    if (game.status !== 'scheduled') {
+      try {
+        const boxScoreUrl = `/games/${game.gameId}/boxscore`;
+        console.log('Navigating to:', boxScoreUrl);
+        
+        // Try Next.js router first
+        await router.push(boxScoreUrl);
+        
+        // If router fails or doesn't navigate, use window.location
+        if (window.location.pathname !== boxScoreUrl) {
+          window.location.href = boxScoreUrl;
+        }
+      } catch (error) {
+        console.error('Navigation to box score failed:', error);
+        // Fallback to window.location
+        window.location.href = `/games/${game.gameId}/boxscore`;
+      }
+    }
+  };
+
+  const formatClock = (clock: string) => {
+    // Handle empty clock for scheduled/finished games
+    if (!clock) return '';
+
+    // If clock is in PT format (PT00M23.70S)
+    if (clock.startsWith('PT')) {
+      const matches = clock.match(/PT(\d+)M([\d.]+)S/);
+      if (matches) {
+        const minutes = parseInt(matches[1]);
+        const seconds = Math.floor(parseFloat(matches[2]));
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }
+    }
+
+    // If clock is already in correct format or other format, return as is
+    return clock;
+  };
+
+  const formatGameStatus = () => {
+    if (game.status === 'live') {
+      return game.period > 4 
+        ? `OT ${formatClock(game.clock)}`
+        : `Q${game.period} ${formatClock(game.clock)}`;
+    }
+    return game.status.charAt(0).toUpperCase() + game.status.slice(1);
+  };
+
+  const getBoxScoreButtonStyle = () => {
+    const isGameStarted = game.status !== 'scheduled';
+    return `text-xs font-bold ${
+      isGameStarted 
+        ? 'text-blue-600 bg-blue-50 hover:bg-blue-100 cursor-pointer' 
+        : 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-50'
+    } rounded-full px-3 py-1 w-[80px] text-center`;
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
-      <div className="flex h-24">
-        {/* Left: Game Status */}
-        <div className="w-28 flex items-center justify-center border-r border-gray-100">
-          <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
-            game.status === 'in_progress' 
-              ? 'bg-green-100 text-green-800'
-              : game.status === 'finished'
-              ? 'bg-gray-100 text-gray-800'
-              : 'bg-blue-100 text-blue-800'
-          }`}>
-            {getGameStatus()}
-          </span>
-        </div>
-
-        {/* Center: Scores and Stats */}
-        <div className="flex-1 px-6 py-3">
-          <div className="flex flex-col justify-between h-full">
-            {/* Away Team */}
-            <div className="flex items-center">
-              <div className="w-16">
-                <span className="font-bold">{game.awayTeam.abbreviation}</span>
-              </div>
-              <div className="w-12 font-bold text-xl">{game.awayTeamScore}</div>
-              <div className="flex gap-4 ml-6 text-sm text-gray-600">
-                <span>{game.awayTeamStats?.rebounds || 0} REB</span>
-                <span>{game.awayTeamStats?.assists || 0} AST</span>
-                <span>{game.awayTeamStats?.blocks || 0} BLK</span>
-              </div>
-            </div>
-
-            {/* Home Team */}
-            <div className="flex items-center">
-              <div className="w-16">
-                <span className="font-bold">{game.homeTeam.abbreviation}</span>
-              </div>
-              <div className="w-12 font-bold text-xl">{game.homeTeamScore}</div>
-              <div className="flex gap-4 ml-6 text-sm text-gray-600">
-                <span>{game.homeTeamStats?.rebounds || 0} REB</span>
-                <span>{game.homeTeamStats?.assists || 0} AST</span>
-                <span>{game.homeTeamStats?.blocks || 0} BLK</span>
-              </div>
-            </div>
+    <div className="max-w-3xl mx-auto">
+      <div 
+        className="bg-gradient-to-br from-white to-gray-50 rounded-lg shadow-md px-6 py-4 cursor-pointer hover:shadow-lg transition-all hover:from-gray-50 hover:to-white"
+        onClick={handleClick}
+        data-testid={`game-card-${game.gameId}`}
+      >
+        {/* Stats Header */}
+        <div className="grid grid-cols-8 text-xs text-gray-500 mb-2">
+          <div className="col-span-2"></div>
+          <div className="col-span-3 grid grid-cols-2 gap-1 pl-8">
+            <div>TEAM</div>
+            <div className="text-center">PTS</div>
+          </div>
+          <div className="col-span-3 grid grid-cols-3 gap-1 pl-8">
+            <div className="text-center">REB</div>
+            <div className="text-center">AST</div>
+            <div className="text-center">BLK</div>
           </div>
         </div>
 
-        {/* Right: Box Score Button */}
-        <div className="w-28 flex items-center justify-center border-l border-gray-100">
-          <button
-            className={`px-4 py-2 rounded ${
-              isGameActive
-                ? 'bg-blue-500 text-white hover:bg-blue-600'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-            disabled={!isGameActive}
-            onClick={() => {/* Handle box score navigation */}}
-          >
-            Box Score
-          </button>
+        <div className="space-y-4">
+          {/* Away Team - First */}
+          <div className="grid grid-cols-8 items-center">
+            {/* Status Container */}
+            <div className="col-span-2">
+              <div 
+                className="text-xs text-gray-600 bg-gray-100 rounded-full px-3 py-1 w-[80px] text-center" 
+                data-testid="game-status"
+              >
+                {formatGameStatus()}
+              </div>
+            </div>
+            
+            {/* Team and Score Container */}
+            <div className="col-span-3 grid grid-cols-2 gap-1 pl-8">
+              <div className="text-lg font-bold" data-testid="away-team-tricode">
+                {game.awayTeam.teamTricode}
+              </div>
+              <div className="text-lg font-bold text-center" data-testid="away-team-score">
+                {game.awayTeam.score}
+              </div>
+            </div>
+
+            {/* Stats Container */}
+            <div className="col-span-3 grid grid-cols-3 gap-1 pl-8">
+              <div className="text-center" data-testid="away-team-rebounds">{game.awayTeam.stats.rebounds}</div>
+              <div className="text-center" data-testid="away-team-assists">{game.awayTeam.stats.assists}</div>
+              <div className="text-center" data-testid="away-team-blocks">{game.awayTeam.stats.blocks}</div>
+            </div>
+          </div>
+
+          {/* Home Team - Second */}
+          <div className="grid grid-cols-8 items-center">
+            {/* Box Score Container */}
+            <div className="col-span-2">
+              <button 
+                className={getBoxScoreButtonStyle()}
+                onClick={handleBoxScoreClick}
+                disabled={game.status === 'scheduled'}
+                data-testid="box-score-button"
+              >
+                Box Score
+              </button>
+            </div>
+
+            {/* Team and Score Container */}
+            <div className="col-span-3 grid grid-cols-2 gap-1 pl-8">
+              <div className="text-lg font-bold" data-testid="home-team-tricode">
+                {game.homeTeam.teamTricode}
+              </div>
+              <div className="text-lg font-bold text-center" data-testid="home-team-score">
+                {game.homeTeam.score}
+              </div>
+            </div>
+
+            {/* Stats Container */}
+            <div className="col-span-3 grid grid-cols-3 gap-1 pl-8">
+              <div className="text-center" data-testid="home-team-rebounds">{game.homeTeam.stats.rebounds}</div>
+              <div className="text-center" data-testid="home-team-assists">{game.homeTeam.stats.assists}</div>
+              <div className="text-center" data-testid="home-team-blocks">{game.homeTeam.stats.blocks}</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

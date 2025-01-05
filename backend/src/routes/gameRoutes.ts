@@ -1,116 +1,66 @@
-import express, { Request, Response, Router } from 'express';
-import { 
-  getGames, 
-  getGameBoxScore, 
-  fetchLiveGames,
-  getCacheStatus 
-} from '../services/nbaService';
+import express, { Request, Response, Router, RequestHandler } from 'express';
+import { getGames, getGameBoxScore, getCacheStatus, fetchGameById } from '../services/nbaService';
 import { logger } from '../config/logger';
-import { GetCommand, DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { docClient, TABLE_NAME } from '../config/dynamoDB';
-import { DescribeTableCommand } from '@aws-sdk/client-dynamodb';
+import { GameScore } from '../types';
 
-const router = Router();
+const router: Router = express.Router();
 
-// Get all games
-router.get('/games', async (req: Request, res: Response) => {
+// Define parameter types
+type BoxScoreParams = {
+  gameId: string;
+};
+
+// GET /api/games
+const getAllGames: RequestHandler = async (_req, res) => {
   try {
     const games = await getGames();
-    logger.info(`Sending ${games.length} games to client`);
     res.json(games);
   } catch (error) {
-    logger.error('Failed to fetch games:', error);
-    res.status(500).json({ error: 'Failed to fetch games' });
+    logger.error('Failed to get games:', error);
+    res.status(500).json({ error: 'Failed to get games' });
   }
-});
+};
 
-// Get box score for a specific game
-router.get('/games/:gameId/boxscore', async (req: Request, res: Response) => {
-  try {
-    const boxScore = await getGameBoxScore(req.params.gameId);
-    if (!boxScore) {
-      return res.status(404).json({ error: 'Box score not found' });
-    }
-    res.json(boxScore);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch box score' });
-  }
-});
-
-// Get live games
-router.get('/games/live', async (req: Request, res: Response) => {
-  try {
-    const games = await fetchLiveGames();
-    res.json(games);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch live games' });
-  }
-});
-
-// Get cache status
-router.get('/cache/status', async (req: Request, res: Response) => {
+// GET /api/games/cache
+const getCacheHandler: RequestHandler = async (_req, res) => {
   try {
     const status = await getCacheStatus();
     res.json(status);
   } catch (error) {
+    logger.error('Failed to get cache status:', error);
     res.status(500).json({ error: 'Failed to get cache status' });
   }
-});
+};
 
-// Add route to check DynamoDB data
-router.get('/db/games', async (req: Request, res: Response) => {
+// GET /api/games/:gameId/boxscore
+const getBoxScore: RequestHandler<BoxScoreParams> = async (req, res) => {
   try {
-    const result = await docClient.send(new GetCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        date: new Date().toISOString().split('T')[0],
-        type: 'scoreboard'
-      }
-    }));
-
-    if (!result.Item) {
-      return res.status(404).json({ message: 'No data found in DynamoDB' });
-    }
-
-    res.json({
-      date: result.Item.date,
-      timestamp: result.Item.timestamp,
-      ttl: result.Item.ttl,
-      gamesCount: result.Item.games.length,
-      games: result.Item.games
-    });
-  } catch (error) {
-    logger.error('Failed to fetch DynamoDB data:', error);
-    res.status(500).json({ error: 'Failed to fetch DynamoDB data' });
-  }
-});
-
-// Add route to check DynamoDB status
-router.get('/db/status', async (req: Request, res: Response) => {
-  try {
-    const command = new DescribeTableCommand({
-      TableName: TABLE_NAME
-    });
+    const { gameId } = req.params;
+    const parentStatus = req.headers['x-parent-game-status'] as string;
+    const parentClock = req.headers['x-parent-game-clock'] as string;
     
-    const response = await docClient.send(command);
-    res.json({
-      status: 'success',
-      table: {
-        name: response.Table?.TableName,
-        status: response.Table?.TableStatus,
-        itemCount: response.Table?.ItemCount,
-        region: process.env.AWS_REGION
-      }
-    });
+    const parentGame = {
+      status: parentStatus,
+      clock: parentClock
+    } as GameScore;
+    
+    const boxScore = await getGameBoxScore(gameId, parentGame);
+    
+    if (!boxScore) {
+      res.status(404).json({ error: 'Box score not found' });
+      return;
+    }
+    
+    res.json(boxScore);
   } catch (error) {
-    logger.error('Failed to check DynamoDB status:', error);
-    res.status(500).json({
-      status: 'error',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      region: process.env.AWS_REGION,
-      tableName: TABLE_NAME
-    });
+    logger.error(`Failed to get box score for game ${req.params.gameId}:`, error);
+    res.status(500).json({ error: 'Failed to get box score' });
   }
-});
+};
+
+// Register routes
+router.get('/', getAllGames);
+router.get('/cache', getCacheHandler);
+router.get('/:gameId/boxscore', getBoxScore);
 
 export default router; 

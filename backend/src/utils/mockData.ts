@@ -1,9 +1,9 @@
-import { GameBoxScore, PlayerStats } from '../types';
+import { GameBoxScore, PlayerStats, TeamBoxScore } from '../types';
 
 const TEAMS = {
   LAL: {
-    teamId: 'LAL',
-    name: 'Los Angeles Lakers',
+    teamId: '1610612747',
+    teamTricode: 'LAL',
     players: [
       { name: 'LeBron James', position: 'F' },
       { name: 'Anthony Davis', position: 'F-C' },
@@ -16,8 +16,8 @@ const TEAMS = {
     ]
   },
   GSW: {
-    teamId: 'GSW',
-    name: 'Golden State Warriors',
+    teamId: '1610612744',
+    teamTricode: 'GSW',
     players: [
       { name: 'Stephen Curry', position: 'G' },
       { name: 'Klay Thompson', position: 'G' },
@@ -50,6 +50,7 @@ function generatePlayerStats(playerInfo: { name: string, position: string }): Pl
     assists: Math.floor(Math.random() * 8),
     steals: Math.floor(Math.random() * 3),
     blocks: Math.floor(Math.random() * 2),
+    personalFouls: Math.floor(Math.random() * 6),
     fgm,
     fga,
     threePm,
@@ -60,41 +61,29 @@ function generatePlayerStats(playerInfo: { name: string, position: string }): Pl
   };
 }
 
-function calculateTeamTotals(players: PlayerStats[]) {
-  return players.reduce((totals, player) => ({
-    points: totals.points + player.points,
-    rebounds: totals.rebounds + player.rebounds,
-    assists: totals.assists + player.assists,
-    steals: totals.steals + player.steals,
-    blocks: totals.blocks + player.blocks,
-    fgm: totals.fgm + player.fgm,
-    fga: totals.fga + player.fga,
-    threePm: totals.threePm + player.threePm,
-    threePa: totals.threePa + player.threePa,
-    ftm: totals.ftm + player.ftm,
-    fta: totals.fta + player.fta,
-  }), {
-    points: 0,
-    rebounds: 0,
-    assists: 0,
-    steals: 0,
-    blocks: 0,
-    fgm: 0,
-    fga: 0,
-    threePm: 0,
-    threePa: 0,
-    ftm: 0,
-    fta: 0,
-  });
+function generateTeamStats(players: PlayerStats[]) {
+  return {
+    points: players.reduce((sum, p) => sum + p.points, 0),
+    rebounds: players.reduce((sum, p) => sum + p.rebounds, 0),
+    assists: players.reduce((sum, p) => sum + p.assists, 0),
+    steals: players.reduce((sum, p) => sum + p.steals, 0),
+    blocks: players.reduce((sum, p) => sum + p.blocks, 0),
+    fgm: players.reduce((sum, p) => sum + p.fgm, 0),
+    fga: players.reduce((sum, p) => sum + p.fga, 0),
+    threePm: players.reduce((sum, p) => sum + p.threePm, 0),
+    threePa: players.reduce((sum, p) => sum + p.threePa, 0),
+    ftm: players.reduce((sum, p) => sum + p.ftm, 0),
+    fta: players.reduce((sum, p) => sum + p.fta, 0),
+    personalFouls: players.reduce((sum, p) => sum + p.personalFouls, 0)
+  };
 }
 
 export function generateMockBoxScore(gameId: string): GameBoxScore {
-  // Use Lakers vs Warriors as example
   const homePlayers = TEAMS.LAL.players.map(generatePlayerStats);
   const awayPlayers = TEAMS.GSW.players.map(generatePlayerStats);
 
-  const homeTotals = calculateTeamTotals(homePlayers);
-  const awayTotals = calculateTeamTotals(awayPlayers);
+  const homeTotals = generateTeamStats(homePlayers);
+  const awayTotals = generateTeamStats(awayPlayers);
 
   return {
     gameId,
@@ -105,7 +94,7 @@ export function generateMockBoxScore(gameId: string): GameBoxScore {
     attendance: 18997,
     homeTeam: {
       teamId: TEAMS.LAL.teamId,
-      name: TEAMS.LAL.name,
+      teamTricode: TEAMS.LAL.teamTricode,
       score: homeTotals.points,
       players: homePlayers,
       totals: homeTotals,
@@ -117,7 +106,7 @@ export function generateMockBoxScore(gameId: string): GameBoxScore {
     },
     awayTeam: {
       teamId: TEAMS.GSW.teamId,
-      name: TEAMS.GSW.name,
+      teamTricode: TEAMS.GSW.teamTricode,
       score: awayTotals.points,
       players: awayPlayers,
       totals: awayTotals,
@@ -129,4 +118,39 @@ export function generateMockBoxScore(gameId: string): GameBoxScore {
     },
     lastUpdate: Date.now(),
   };
-} 
+}
+
+export const mockScoreboard = {
+  scoreboard: {
+    games: [
+      {
+        gameId: '0022400476',
+        gameStatus: 2,
+        period: 3,
+        gameClock: 'PT05M30.00S',
+        homeTeam: {
+          teamId: 1610612758,
+          teamTricode: 'SAC',
+          score: 100,
+          statistics: {
+            reboundsDefensive: '30',
+            reboundsOffensive: '10',
+            assists: '25',
+            blocks: '5'
+          }
+        },
+        awayTeam: {
+          teamId: 1610612763,
+          teamTricode: 'MEM',
+          score: 100,
+          statistics: {
+            reboundsDefensive: '28',
+            reboundsOffensive: '12',
+            assists: '22',
+            blocks: '4'
+          }
+        }
+      }
+    ]
+  }
+}; 

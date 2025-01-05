@@ -14,15 +14,25 @@ interface NBAGameData {
   gameClock: string;
   homeTeam: {
     teamId: number;
-    teamName: string;
-    teamCity: string;
+    teamTricode: string;
     score: number;
+    statistics?: {
+      reboundsDefensive: string;
+      reboundsOffensive: string;
+      assists: string;
+      blocks: string;
+    };
   };
   awayTeam: {
     teamId: number;
-    teamName: string;
-    teamCity: string;
+    teamTricode: string;
     score: number;
+    statistics?: {
+      reboundsDefensive: string;
+      reboundsOffensive: string;
+      assists: string;
+      blocks: string;
+    };
   };
 }
 
@@ -47,13 +57,59 @@ export async function getGames(): Promise<GameScore[]> {
       return [];
     }
 
+    logger.info('Raw scoreboard data:', {
+      firstGame: scoreboard.games[0],
+      firstGameHomeTeam: scoreboard.games[0].homeTeam,
+      firstGameAwayTeam: scoreboard.games[0].awayTeam
+    });
+
     return scoreboard.games
       .map((game: NBAGameData) => {
         if (!game) return null;
-        return {
-          ...transformNBAGame(game),
-          status: validateGameStatus(game.gameStatus)
+        
+        logger.info('Processing game data:', {
+          gameId: game.gameId,
+          homeTeam: {
+            teamId: game.homeTeam.teamId,
+            teamTricode: game.homeTeam.teamTricode
+          },
+          awayTeam: {
+            teamId: game.awayTeam.teamId,
+            teamTricode: game.awayTeam.teamTricode
+          }
+        });
+
+        const transformed = {
+          gameId: game.gameId,
+          status: validateGameStatus(game.gameStatus),
+          period: game.period || 0,
+          clock: game.gameClock || '',
+          homeTeam: {
+            teamId: game.homeTeam.teamId.toString(),
+            teamTricode: game.homeTeam.teamTricode,
+            score: parseInt(game.homeTeam.score.toString()) || 0,
+            stats: {
+              rebounds: 0,
+              assists: 0,
+              blocks: 0
+            }
+          },
+          awayTeam: {
+            teamId: game.awayTeam.teamId.toString(),
+            teamTricode: game.awayTeam.teamTricode,
+            score: parseInt(game.awayTeam.score.toString()) || 0,
+            stats: {
+              rebounds: 0,
+              assists: 0,
+              blocks: 0
+            }
+          },
+          lastUpdate: Date.now()
         };
+
+        logger.info('Transformed game data:', transformed);
+
+        return transformed;
       })
       .filter((game: GameScore | null): game is GameScore => game !== null);
   } catch (error) {
@@ -118,4 +174,47 @@ export async function getGameBoxScore(id: string): Promise<GameBoxScore | null> 
     }
     throw error;
   }
+}
+
+export function generateMockGame(id: number): NBAGameData {
+  const teams = [
+    { teamTricode: 'LAL' },
+    { teamTricode: 'GSW' },
+    { teamTricode: 'BOS' },
+    { teamTricode: 'BKN' },
+    { teamTricode: 'MIA' },
+    { teamTricode: 'PHX' }
+  ];
+
+  const homeTeamIndex = id % teams.length;
+  const awayTeamIndex = (id + 1) % teams.length;
+
+  return {
+    gameId: `00${id}`,
+    gameStatus: Math.random() > 0.7 ? 2 : Math.random() > 0.5 ? 3 : 1,
+    period: Math.floor(Math.random() * 4) + 1,
+    gameClock: 'PT11M52.00S',
+    homeTeam: {
+      teamId: id * 2,
+      teamTricode: teams[homeTeamIndex].teamTricode,
+      score: Math.floor(Math.random() * 120),
+      statistics: {
+        reboundsDefensive: '30',
+        reboundsOffensive: '10',
+        assists: '25',
+        blocks: '5'
+      }
+    },
+    awayTeam: {
+      teamId: id * 2 + 1,
+      teamTricode: teams[awayTeamIndex].teamTricode,
+      score: Math.floor(Math.random() * 120),
+      statistics: {
+        reboundsDefensive: '28',
+        reboundsOffensive: '12',
+        assists: '22',
+        blocks: '4'
+      }
+    }
+  };
 } 

@@ -1,8 +1,8 @@
 export interface Team {
   teamId: string;
-  name: string;
+  teamTricode: string;
   score: number;
-  stats?: {
+  stats: {
     rebounds: number;
     assists: number;
     blocks: number;
@@ -54,6 +54,7 @@ export interface PlayerStats {
   ftm: number;
   fta: number;
   plusMinus: number;
+  personalFouls: number;
 }
 
 export interface TeamBoxScore extends Team {
@@ -70,6 +71,7 @@ export interface TeamBoxScore extends Team {
     threePa: number;
     ftm: number;
     fta: number;
+    personalFouls: number;
   };
 }
 
@@ -78,4 +80,64 @@ export interface GameBoxScore extends GameScore {
   awayTeam: TeamBoxScore;
   arena?: string;
   attendance?: number;
+}
+
+export interface NBATeamStatistics {
+  reboundsDefensive: string;
+  reboundsOffensive: string;
+  assists: string;
+  blocks: string;
+  fieldGoalsMade?: string;
+  fieldGoalsAttempted?: string;
+  threePointersMade?: string;
+  threePointersAttempted?: string;
+  freeThrowsMade?: string;
+  freeThrowsAttempted?: string;
+}
+
+export interface NBATeamStats {
+  totals: {
+    points: number;
+    rebounds: number;
+    assists: number;
+    blocks: number;
+  };
+}
+
+export interface NBAPeriod {
+  period: number;
+  periodType: string;
+  score: number;
+}
+
+export interface NBATeam {
+  teamId: number;
+  teamTricode: string;
+  score: number;
+  statistics?: NBATeamStatistics;
+  teamStats?: NBATeamStats;
+  periods: NBAPeriod[];
+}
+
+export interface NBAGameLeaders {
+  personId: number;
+  name: string;
+  teamTricode: string;
+  points: number;
+  rebounds: number;
+  assists: number;
+}
+
+export interface NBAGame {
+  gameId: string;
+  gameStatus: number;
+  gameStatusText: string;
+  period: number;
+  gameClock: string;
+  homeTeam: NBATeam;
+  awayTeam: NBATeam;
+  gameLeaders?: {
+    homeLeaders: NBAGameLeaders;
+    awayLeaders: NBAGameLeaders;
+  };
 } 
