@@ -6,10 +6,11 @@
   "scripts": {
     "build": "tsc",
     "start": "ts-node src/server.ts",
-    "dev": "nodemon --exec ts-node src/server.ts",
+    "dev": "ts-node-dev src/index.ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "serve": "node dist/server.js"
+    "serve": "node dist/server.js",
+    "setup:dynamodb": "ts-node scripts/setupDynamoDB.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.0.0",

@@ -1,44 +1,19 @@
 import { WebSocket } from 'ws';
-import { logger } from '../config/logger';
-import { GameScore, GameAlert } from '../types';
-import { ExtendedWebSocket } from '../types/websocket';
+import { GameAlert } from '../types';
 
-const clients = new Set<ExtendedWebSocket>();
+export class WebSocketService {
+  private clients = new Set<WebSocket>();
 
-export function broadcastGameUpdate(game: GameScore) {
-  const message = JSON.stringify({
-    type: 'game-update',
-    game,
-    timestamp: Date.now()
-  });
+  public broadcastAlert(alert: GameAlert) {
+    const message = JSON.stringify({
+      type: 'GAME_ALERT',
+      data: alert
+    });
 
-  clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      try {
+    this.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
         client.send(message);
-      } catch (error) {
-        logger.error('Failed to send game update:', error);
       }
-    }
-  });
-}
-
-export function broadcastAlert(alert: GameAlert) {
-  const message = JSON.stringify({
-    type: 'alert',
-    alert,
-    timestamp: Date.now()
-  });
-
-  clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      try {
-        client.send(message);
-      } catch (error) {
-        logger.error('Failed to send alert:', error);
-      }
-    }
-  });
-}
-
-export { clients }; 
+    });
+  }
+} 
