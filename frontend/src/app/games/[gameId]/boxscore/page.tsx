@@ -12,6 +12,7 @@ export default function BoxScorePage({ params }: { params: { gameId: string } })
   return (
     <div className="container mx-auto px-4 py-8">
       <BoxScore 
+        key={params.gameId}
         gameId={params.gameId} 
         status={status}
         period={period ? parseInt(period) : undefined}

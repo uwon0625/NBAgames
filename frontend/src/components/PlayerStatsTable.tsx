@@ -19,13 +19,13 @@ export const PlayerStatsTable: React.FC<PlayerStatsTableProps> = ({ players, tot
           <th className="text-right">BLK</th>
           <th className="text-right">PF</th>
           <th className="text-right">FG</th>
-          <th className="text-right">3PT</th>
+          <th className="text-right">3P</th>
           <th className="text-right">FT</th>
         </tr>
       </thead>
       <tbody>
-        {players.map(player => (
-          <tr key={player.playerId} className="text-sm">
+        {players.map((player, index) => (
+          <tr key={`${player.playerId}_${index}`} className="text-sm">
             <td>{player.name}</td>
             <td className="text-right">{player.minutes}</td>
             <td className="text-right">{player.points}</td>
@@ -38,7 +38,7 @@ export const PlayerStatsTable: React.FC<PlayerStatsTableProps> = ({ players, tot
             <td className="text-right">{`${player.ftm}-${player.fta}`}</td>
           </tr>
         ))}
-        <tr className="font-bold border-t">
+        <tr key={`totals_${players[0]?.playerId}`} className="font-bold border-t text-sm">
           <td>Team Totals</td>
           <td className="text-right">-</td>
           <td className="text-right">{totals.points}</td>

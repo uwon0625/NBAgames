@@ -1,10 +1,8 @@
 import { GameScore, GameBoxScore } from '../types';
 import { fetchNBAScoreboard, fetchGameById, fetchNBABoxScore, transformNBAGame, transformNBABoxScore } from './nbaService';
-import { generateMockBoxScore } from '../utils/mockData';
 import { logger } from '../config/logger';
 import { CacheService } from './cacheService';
-
-const USE_TEST_DATA = process.env.USE_TEST_DATA === 'true';
+import { generateGames, generateBoxScore } from '../testData/generateGames';
 
 type GameStatus = 'scheduled' | 'live' | 'final';
 
@@ -52,9 +50,33 @@ function validateGameStatus(status: number): GameStatus {
 
 export class GameService {
   private cacheService: CacheService;
+  private lastGameStates: Map<string, string> = new Map(); // gameId -> hash of game state
 
   constructor() {
     this.cacheService = new CacheService();
+  }
+
+  // Add public method for caching
+  public async cacheGame(gameId: string, game: GameScore): Promise<void> {
+    await this.cacheService.cacheGameScore(gameId, game);
+  }
+
+  private getGameStateHash(game: GameScore): string {
+    // Only hash the fields we care about
+    const relevantData = {
+      status: game.status,
+      period: game.period,
+      clock: game.clock,
+      homeTeam: {
+        score: game.homeTeam.score,
+        stats: game.homeTeam.stats
+      },
+      awayTeam: {
+        score: game.awayTeam.score,
+        stats: game.awayTeam.stats
+      }
+    };
+    return JSON.stringify(relevantData);
   }
 
   async getGame(gameId: string): Promise<GameScore | null> {
@@ -100,6 +122,12 @@ export class GameService {
 
   async getGameFromDB(gameId: string): Promise<GameScore | null> {
     try {
+      if (process.env.USE_MOCK_DATA === 'true') {
+        logger.info(`Using mock data for game ${gameId}`);
+        const { games } = await this.getGames();
+        return games.find(g => g.gameId === gameId) || null;
+      }
+
       const game = await fetchGameById(gameId);
       if (!game) return null;
 
@@ -109,15 +137,25 @@ export class GameService {
       };
     } catch (error) {
       logger.error(`Failed to get game ${gameId}:`, error);
+      if (process.env.USE_MOCK_DATA === 'true') {
+        const { games } = await this.getGames();
+        return games.find(g => g.gameId === gameId) || null;
+      }
       throw error;
     }
   }
 
   async getBoxScoreFromDB(gameId: string): Promise<GameBoxScore | null> {
     try {
-      if (USE_TEST_DATA) {
+      if (process.env.USE_MOCK_DATA === 'true') {
         logger.info(`Using mock data for game ${gameId}`);
-        return generateMockBoxScore(gameId);
+        const { games } = await this.getGames();
+        const game = games.find(g => g.gameId === gameId);
+        if (!game) {
+          logger.warn(`Game ${gameId} not found`);
+          return null;
+        }
+        return generateBoxScore(game);
       }
 
       // First try to get the game from the scoreboard
@@ -139,54 +177,44 @@ export class GameService {
         return transformNBABoxScore(game);
       }
 
-      // If all else fails and we're in test mode, use mock data
-      if (USE_TEST_DATA) {
+      if (process.env.USE_MOCK_DATA === 'true') {
         logger.info(`Falling back to mock data for game ${gameId}`);
-        return generateMockBoxScore(gameId);
+        const { games } = await this.getGames();
+        const game = games.find(g => g.gameId === gameId);
+        return game ? generateBoxScore(game) : null;
       }
 
       return null;
     } catch (error) {
       logger.error(`Failed to get box score for game ${gameId}:`, error);
-      if (USE_TEST_DATA) {
+      if (process.env.USE_MOCK_DATA === 'true') {
         logger.info('Using mock data due to error');
-        return generateMockBoxScore(gameId);
+        const { games } = await this.getGames();
+        const game = games.find(g => g.gameId === gameId);
+        return game ? generateBoxScore(game) : null;
       }
       throw error;
     }
   }
 
-  async getGames(): Promise<GameScore[]> {
+  private async fetchGames(): Promise<GameScore[]> {
     try {
+      if (process.env.USE_MOCK_DATA === 'true') {
+        logger.info('Using mock data for games');
+        return generateGames(6); // Generate 6 mock games
+      }
+
       const scoreboard = await fetchNBAScoreboard();
       if (!scoreboard?.games) {
         logger.warn('No games data in scoreboard');
         return [];
       }
 
-      logger.info('Raw scoreboard data:', {
-        firstGame: scoreboard.games[0],
-        firstGameHomeTeam: scoreboard.games[0].homeTeam,
-        firstGameAwayTeam: scoreboard.games[0].awayTeam
-      });
-
       return scoreboard.games
         .map((game: NBAGameData) => {
           if (!game) return null;
           
-          logger.info('Processing game data:', {
-            gameId: game.gameId,
-            homeTeam: {
-              teamId: game.homeTeam.teamId,
-              teamTricode: game.homeTeam.teamTricode
-            },
-            awayTeam: {
-              teamId: game.awayTeam.teamId,
-              teamTricode: game.awayTeam.teamTricode
-            }
-          });
-
-          const transformed = {
+          return {
             gameId: game.gameId,
             status: validateGameStatus(game.gameStatus),
             period: game.period || 0,
@@ -196,9 +224,10 @@ export class GameService {
               teamTricode: game.homeTeam.teamTricode,
               score: parseInt(game.homeTeam.score.toString()) || 0,
               stats: {
-                rebounds: 0,
-                assists: 0,
-                blocks: 0
+                rebounds: parseInt(game.homeTeam.statistics?.reboundsDefensive || '0') + 
+                         parseInt(game.homeTeam.statistics?.reboundsOffensive || '0'),
+                assists: parseInt(game.homeTeam.statistics?.assists || '0'),
+                blocks: parseInt(game.homeTeam.statistics?.blocks || '0')
               }
             },
             awayTeam: {
@@ -206,19 +235,42 @@ export class GameService {
               teamTricode: game.awayTeam.teamTricode,
               score: parseInt(game.awayTeam.score.toString()) || 0,
               stats: {
-                rebounds: 0,
-                assists: 0,
-                blocks: 0
+                rebounds: parseInt(game.awayTeam.statistics?.reboundsDefensive || '0') + 
+                         parseInt(game.awayTeam.statistics?.reboundsOffensive || '0'),
+                assists: parseInt(game.awayTeam.statistics?.assists || '0'),
+                blocks: parseInt(game.awayTeam.statistics?.blocks || '0')
               }
             },
             lastUpdate: Date.now()
           };
-
-          logger.info('Transformed game data:', transformed);
-
-          return transformed;
         })
         .filter((game: GameScore | null): game is GameScore => game !== null);
+    } catch (error) {
+      logger.error('Failed to fetch games:', error);
+      if (process.env.USE_MOCK_DATA === 'true') {
+        logger.info('Using mock data due to error');
+        return generateGames(6);
+      }
+      throw error;
+    }
+  }
+
+  async getGames(): Promise<{ games: GameScore[], changedGameIds: string[] }> {
+    try {
+      const games = await this.fetchGames();
+      const changedGameIds: string[] = [];
+
+      games.forEach(game => {
+        const newStateHash = this.getGameStateHash(game);
+        const oldStateHash = this.lastGameStates.get(game.gameId);
+        
+        if (newStateHash !== oldStateHash) {
+          changedGameIds.push(game.gameId);
+          this.lastGameStates.set(game.gameId, newStateHash);
+        }
+      });
+
+      return { games, changedGameIds };
     } catch (error) {
       logger.error('Failed to get games:', error);
       throw error;

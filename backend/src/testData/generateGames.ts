@@ -1,16 +1,40 @@
 import { faker } from '@faker-js/faker';
 import { GameScore, PlayerStats, TeamBoxScore, GameBoxScore } from '../types';
 
+const MOCK_GAME_ID_PREFIX = '0022400';
+
+// Create a persistent store for players
+interface TeamPlayers {
+  [teamId: string]: {
+    id: string;
+    name: string;
+    position: string;
+  }[];
+}
+
+// Initialize persistent player data
+const TEAM_PLAYERS: TeamPlayers = {};
+
+// Define NBA teams
 const NBA_TEAMS = [
-  { teamId: '1', name: 'Los Angeles Lakers', abbreviation: 'LAL' },
-  { teamId: '2', name: 'Boston Celtics', abbreviation: 'BOS' },
-  { teamId: '3', name: 'Golden State Warriors', abbreviation: 'GSW' },
-  { teamId: '4', name: 'Miami Heat', abbreviation: 'MIA' },
-  { teamId: '5', name: 'Milwaukee Bucks', abbreviation: 'MIL' },
-  { teamId: '6', name: 'Phoenix Suns', abbreviation: 'PHX' },
-  { teamId: '7', name: 'Brooklyn Nets', abbreviation: 'BKN' },
-  { teamId: '8', name: 'Denver Nuggets', abbreviation: 'DEN' },
+  { teamId: '1', teamTricode: 'LAL', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
+  { teamId: '2', teamTricode: 'BOS', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
+  { teamId: '3', teamTricode: 'GSW', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
+  { teamId: '4', teamTricode: 'MIA', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
+  { teamId: '5', teamTricode: 'MIL', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
+  { teamId: '6', teamTricode: 'PHX', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
+  { teamId: '7', teamTricode: 'BKN', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
+  { teamId: '8', teamTricode: 'DEN', score: 0, stats: { rebounds: 0, assists: 0, blocks: 0 } },
 ];
+
+// Initialize players for each team
+NBA_TEAMS.forEach(team => {
+  TEAM_PLAYERS[team.teamId] = Array.from({ length: 8 }, (_, i) => ({
+    id: `${team.teamTricode}_${i + 1}`,
+    name: faker.person.fullName(),
+    position: faker.helpers.arrayElement(['G', 'F', 'C', 'F-C', 'G-F'])
+  }));
+});
 
 const generateTeamStats = () => ({
   rebounds: faker.number.int({ min: 20, max: 60 }),
@@ -18,132 +42,122 @@ const generateTeamStats = () => ({
   blocks: faker.number.int({ min: 2, max: 12 }),
 });
 
-const generateGameScore = (status: 'scheduled' | 'in_progress' | 'finished'): GameScore => {
+const generateGameScore = (gameId: string, status: 'scheduled' | 'live' | 'final'): GameScore => {
   const teams = faker.helpers.shuffle([...NBA_TEAMS]);
   const homeTeam = teams[0];
   const awayTeam = teams[1];
 
   const baseGame = {
-    gameId: faker.string.uuid(),
+    gameId,
     status,
     period: status === 'scheduled' ? 0 : faker.number.int({ min: 1, max: 4 }),
     clock: status === 'scheduled' ? '' : `${faker.number.int({ min: 0, max: 11 })}:${faker.number.int({ min: 0, max: 59 }).toString().padStart(2, '0')}`,
-    startTime: faker.date.soon({ days: 1 }).toISOString(),
   };
 
   if (status === 'scheduled') {
     return {
       ...baseGame,
       homeTeam: {
-        teamId: homeTeam.teamId,
-        name: homeTeam.name,
-        abbreviation: homeTeam.abbreviation,
+        ...homeTeam,
         score: 0,
         stats: { rebounds: 0, assists: 0, blocks: 0 },
       },
       awayTeam: {
-        teamId: awayTeam.teamId,
-        name: awayTeam.name,
-        abbreviation: awayTeam.abbreviation,
+        ...awayTeam,
         score: 0,
         stats: { rebounds: 0, assists: 0, blocks: 0 },
       },
+      lastUpdate: Date.now()
     };
   }
 
   return {
     ...baseGame,
     homeTeam: {
-      teamId: homeTeam.teamId,
-      name: homeTeam.name,
-      abbreviation: homeTeam.abbreviation,
+      ...homeTeam,
       score: faker.number.int({ min: 80, max: 130 }),
       stats: generateTeamStats(),
     },
     awayTeam: {
-      teamId: awayTeam.teamId,
-      name: awayTeam.name,
-      abbreviation: awayTeam.abbreviation,
+      ...awayTeam,
       score: faker.number.int({ min: 80, max: 130 }),
       stats: generateTeamStats(),
     },
+    lastUpdate: Date.now()
   };
 };
 
-const generatePlayerStats = (name: string): PlayerStats => ({
-  playerId: faker.string.uuid(),
-  name,
-  position: faker.helpers.arrayElement(['G', 'F', 'C', 'G/F', 'F/C']),
-  minutes: `${faker.number.int({ min: 12, max: 48 })}:${faker.number.int({ min: 0, max: 59 }).toString().padStart(2, '0')}`,
-  points: faker.number.int({ min: 0, max: 40 }),
-  rebounds: faker.number.int({ min: 0, max: 15 }),
-  assists: faker.number.int({ min: 0, max: 12 }),
-  steals: faker.number.int({ min: 0, max: 5 }),
-  blocks: faker.number.int({ min: 0, max: 5 }),
-  fgm: faker.number.int({ min: 0, max: 15 }),
-  fga: faker.number.int({ min: 10, max: 25 }),
-  threePm: faker.number.int({ min: 0, max: 8 }),
-  threePa: faker.number.int({ min: 0, max: 12 }),
-  ftm: faker.number.int({ min: 0, max: 10 }),
-  fta: faker.number.int({ min: 0, max: 12 }),
-  plusMinus: faker.number.int({ min: -20, max: 20 }),
-});
+const generatePlayers = (teamId: string): PlayerStats[] => {
+  const teamPlayers = TEAM_PLAYERS[teamId];
+  if (!teamPlayers) {
+    throw new Error(`No players found for team ${teamId}`);
+  }
 
-const generateTeamBoxScore = (team: typeof NBA_TEAMS[0]): TeamBoxScore => {
-  const players = Array.from({ length: 10 }, () => 
-    generatePlayerStats(faker.person.fullName())
-  );
-
-  const totals = players.reduce((acc, player) => ({
-    points: acc.points + player.points,
-    rebounds: acc.rebounds + player.rebounds,
-    assists: acc.assists + player.assists,
-    steals: acc.steals + player.steals,
-    blocks: acc.blocks + player.blocks,
-    fgm: acc.fgm + player.fgm,
-    fga: acc.fga + player.fga,
-    threePm: acc.threePm + player.threePm,
-    threePa: acc.threePa + player.threePa,
-    ftm: acc.ftm + player.ftm,
-    fta: acc.fta + player.fta,
-  }), {
-    points: 0, rebounds: 0, assists: 0, steals: 0, blocks: 0,
-    fgm: 0, fga: 0, threePm: 0, threePa: 0, ftm: 0, fta: 0,
-  });
-
-  return {
-    ...team,
-    players,
-    totals,
-    score: totals.points,
-    stats: {
-      rebounds: totals.rebounds,
-      assists: totals.assists,
-      blocks: totals.blocks,
-    },
-  };
+  return teamPlayers.map(player => ({
+    playerId: player.id,
+    name: player.name,
+    position: player.position,
+    minutes: faker.number.int({ min: 12, max: 40 }).toString(),
+    points: faker.number.int({ min: 0, max: 30 }),
+    rebounds: faker.number.int({ min: 0, max: 15 }),
+    assists: faker.number.int({ min: 0, max: 12 }),
+    steals: faker.number.int({ min: 0, max: 5 }),
+    blocks: faker.number.int({ min: 0, max: 5 }),
+    personalFouls: faker.number.int({ min: 0, max: 6 }),
+    fgm: faker.number.int({ min: 0, max: 12 }),
+    fga: faker.number.int({ min: 5, max: 20 }),
+    threePm: faker.number.int({ min: 0, max: 8 }),
+    threePa: faker.number.int({ min: 0, max: 12 }),
+    ftm: faker.number.int({ min: 0, max: 10 }),
+    fta: faker.number.int({ min: 0, max: 12 }),
+    plusMinus: faker.number.int({ min: -20, max: 20 }),
+  }));
 };
 
 export const generateBoxScore = (gameScore: GameScore): GameBoxScore => {
-  const homeTeam = NBA_TEAMS.find(team => team.teamId === gameScore.homeTeam.teamId);
-  const awayTeam = NBA_TEAMS.find(team => team.teamId === gameScore.awayTeam.teamId);
-
-  if (!homeTeam || !awayTeam) {
-    throw new Error('Team not found');
-  }
-
   return {
     ...gameScore,
-    homeTeam: generateTeamBoxScore(homeTeam),
-    awayTeam: generateTeamBoxScore(awayTeam),
+    homeTeam: {
+      ...gameScore.homeTeam,
+      players: generatePlayers(gameScore.homeTeam.teamId),
+      totals: {
+        points: gameScore.homeTeam.score,
+        ...generateTeamStats(),
+        steals: faker.number.int({ min: 3, max: 12 }),
+        personalFouls: faker.number.int({ min: 10, max: 25 }),
+        fgm: faker.number.int({ min: 30, max: 45 }),
+        fga: faker.number.int({ min: 70, max: 90 }),
+        threePm: faker.number.int({ min: 8, max: 20 }),
+        threePa: faker.number.int({ min: 25, max: 45 }),
+        ftm: faker.number.int({ min: 10, max: 25 }),
+        fta: faker.number.int({ min: 15, max: 30 }),
+      }
+    },
+    awayTeam: {
+      ...gameScore.awayTeam,
+      players: generatePlayers(gameScore.awayTeam.teamId),
+      totals: {
+        points: gameScore.awayTeam.score,
+        ...generateTeamStats(),
+        steals: faker.number.int({ min: 3, max: 12 }),
+        personalFouls: faker.number.int({ min: 10, max: 25 }),
+        fgm: faker.number.int({ min: 30, max: 45 }),
+        fga: faker.number.int({ min: 70, max: 90 }),
+        threePm: faker.number.int({ min: 8, max: 20 }),
+        threePa: faker.number.int({ min: 25, max: 45 }),
+        ftm: faker.number.int({ min: 10, max: 25 }),
+        fta: faker.number.int({ min: 15, max: 30 }),
+      }
+    },
     arena: faker.location.streetAddress(),
     attendance: faker.number.int({ min: 15000, max: 20000 }),
   };
 };
 
 export const generateGames = (count: number = 6): GameScore[] => {
-  return Array.from({ length: count }, () => {
-    const status = faker.helpers.arrayElement(['scheduled', 'in_progress', 'finished'] as const);
-    return generateGameScore(status);
+  return Array.from({ length: count }, (_, index) => {
+    const gameId = `${MOCK_GAME_ID_PREFIX}${(index + 1).toString().padStart(3, '0')}`;
+    const status = faker.helpers.arrayElement(['scheduled', 'live', 'final'] as const);
+    return generateGameScore(gameId, status);
   });
 }; 

@@ -20,10 +20,8 @@ app.get('/', (req, res) => {
   res.json({ message: 'NBA Games API' });
 });
 
-// Mount game routes at /api/games
+// Mount routes with /api prefix
 app.use('/api/games', gameRoutes);
-
-// Mount admin routes at /api/admin
 app.use('/api/admin', adminRouter);
 
 // Add 404 handler

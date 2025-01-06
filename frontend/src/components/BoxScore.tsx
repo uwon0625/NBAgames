@@ -18,14 +18,18 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
     useQuery<Game | undefined>({
       queryKey: ['game', gameId],
       queryFn: () => fetchGame(gameId),
-      enabled: !!gameId
+      enabled: !!gameId,
+      retry: 1,
+      staleTime: 30000 // Cache for 30 seconds
     });
 
   const { data: boxScore, isLoading: boxScoreLoading, error: boxScoreError } = 
     useQuery<GameBoxScore>({
       queryKey: ['boxScore', gameId],
       queryFn: () => getBoxScore(gameId!, game!),
-      enabled: !!gameId && !!game
+      enabled: !!gameId && !!game,
+      retry: 1,
+      staleTime: 30000 // Cache for 30 seconds
     });
 
   if (!gameId) {
@@ -33,11 +37,21 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
   }
 
   if (gameLoading || boxScoreLoading) {
-    return <div className="text-center p-4">Loading...</div>;
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-gray-500">Loading box score...</div>
+      </div>
+    );
   }
 
   if (gameError || boxScoreError) {
-    return <div className="text-center text-red-600 p-4">Error loading box score</div>;
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-red-500">
+          {gameError ? 'Error loading game data' : 'Error loading box score'}
+        </div>
+      </div>
+    );
   }
 
   if (!game || !boxScore) {
@@ -98,6 +112,7 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
             {boxScore.homeTeam.teamTricode}
           </h2>
           <PlayerStatsTable 
+            key={`home-${boxScore.homeTeam.teamTricode}`}
             players={boxScore.homeTeam.players} 
             totals={boxScore.homeTeam.totals} 
           />
@@ -109,6 +124,7 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
             {boxScore.awayTeam.teamTricode}
           </h2>
           <PlayerStatsTable 
+            key={`away-${boxScore.awayTeam.teamTricode}`}
             players={boxScore.awayTeam.players} 
             totals={boxScore.awayTeam.totals} 
           />
