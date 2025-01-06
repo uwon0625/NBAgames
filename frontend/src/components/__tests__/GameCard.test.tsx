@@ -113,14 +113,16 @@ describe('GameCard', () => {
     expect(screen.getByTestId('game-status')).toHaveTextContent('Final');
   });
 
-  it('shows box score button and handles click', async () => {
+  it('shows box score button and handles click', () => {
     const { mockRouter } = renderWithRouter(<GameCard game={mockGame} />);
     const boxScoreButton = screen.getByTestId('box-score-button');
     expect(boxScoreButton).toBeInTheDocument();
     
     fireEvent.click(boxScoreButton);
     // Stop event propagation is handled in the component
-    expect(mockRouter.push).toHaveBeenCalledWith(`/games/${mockGame.gameId}/boxscore`);
+    expect(mockRouter.push).toHaveBeenCalledWith(
+      `/games/${mockGame.gameId}/boxscore?status=${mockGame.status}&period=${mockGame.period}&clock=${encodeURIComponent(mockGame.clock)}`
+    );
   });
 
   it('navigates to game details on card click', () => {
