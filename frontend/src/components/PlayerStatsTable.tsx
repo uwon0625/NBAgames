@@ -1,5 +1,6 @@
 import React from 'react';
 import { PlayerStats, TeamTotals } from '@/types/Game';
+import { formatPlayTime, formatShootingStats } from '@/utils/formatters';
 
 interface PlayerStatsTableProps {
   players: PlayerStats[];
@@ -27,15 +28,15 @@ export const PlayerStatsTable: React.FC<PlayerStatsTableProps> = ({ players, tot
         {players.map((player, index) => (
           <tr key={`${player.playerId}_${index}`} className="text-sm">
             <td>{player.name}</td>
-            <td className="text-right">{player.minutes}</td>
+            <td className="text-right">{formatPlayTime(player.minutes)}</td>
             <td className="text-right">{player.points}</td>
             <td className="text-right">{player.rebounds}</td>
             <td className="text-right">{player.assists}</td>
             <td className="text-right">{player.blocks}</td>
             <td className="text-right">{player.personalFouls}</td>
-            <td className="text-right">{`${player.fgm}-${player.fga}`}</td>
-            <td className="text-right">{`${player.threePm}-${player.threePa}`}</td>
-            <td className="text-right">{`${player.ftm}-${player.fta}`}</td>
+            <td className="text-right">{formatShootingStats(player.fgm, player.fga)}</td>
+            <td className="text-right">{formatShootingStats(player.threePm, player.threePa)}</td>
+            <td className="text-right">{formatShootingStats(player.ftm, player.fta)}</td>
           </tr>
         ))}
         <tr key={`totals_${players[0]?.playerId}`} className="font-bold border-t text-sm">

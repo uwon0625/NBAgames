@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { GameList } from '@/components/GameList';
 import { Game } from '@/types/Game';
-import { fetchNBAGames } from '@/services/nbaService';
 
 const REFRESH_INTERVAL = 10000; // 10 seconds
 
@@ -18,7 +17,7 @@ export default function Home() {
         setIsLoading(true);
         const response = await fetch('http://localhost:3001/api/games');
         const data = await response.json();
-        console.log('Games data:', data); // Let's see what we're getting
+        console.log('Games data:', data);
         setGames(data);
       } catch (error) {
         console.error('Error fetching games:', error);

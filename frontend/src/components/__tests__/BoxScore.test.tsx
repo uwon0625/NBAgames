@@ -4,6 +4,7 @@ import { BoxScore } from '../BoxScore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as api from '@/services/api';
 import { Game, GameBoxScore } from '@/types/Game';
+import { GameStatus } from '@/types/enums';
 
 // Mock the API module
 jest.mock('@/services/api');
@@ -12,7 +13,7 @@ const mockedApi = api as jest.Mocked<typeof api>;
 describe('BoxScore', () => {
   const mockGame: Game = {
     gameId: '1234567',
-    status: 'final' as const,
+    status: GameStatus.LIVE,
     period: 4,
     clock: '0:00',
     homeTeam: {
@@ -40,7 +41,7 @@ describe('BoxScore', () => {
 
   const mockBoxScore: GameBoxScore = {
     gameId: '1234567',
-    status: 'in_progress',
+    status: GameStatus.LIVE,
     period: 2,
     clock: '5:30',
     startTime: '2024-01-04T19:00:00Z',
@@ -231,9 +232,9 @@ describe('BoxScore', () => {
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
+        <BoxScore gameId="1234567" status={GameStatus.LIVE} period={2} clock="5:30" />
       </QueryClientProvider>
     );
-    expect(await screen.findByTestId('game-status')).toHaveTextContent('In Progress');
+    expect(await screen.findByTestId('game-status')).toHaveTextContent('Q2 5:30');
   });
 }); 

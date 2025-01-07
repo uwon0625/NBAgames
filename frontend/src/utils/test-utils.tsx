@@ -4,11 +4,7 @@ import { RouterContext } from './RouterContext';
 
 // Create mock router context
 const createMockRouter = () => ({
-  push: jest.fn().mockImplementation(async (url: string) => {
-    // Mock successful navigation
-    window.location.pathname = url;
-    return true;
-  }),
+  push: jest.fn().mockResolvedValue(true),
   back: jest.fn().mockResolvedValue(true),
   forward: jest.fn().mockResolvedValue(true),
   refresh: jest.fn().mockResolvedValue(true),

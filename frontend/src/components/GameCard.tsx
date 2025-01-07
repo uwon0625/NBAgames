@@ -3,6 +3,8 @@
 import React, { useContext } from 'react';
 import { Game } from '@/types/Game';
 import { RouterContext } from '@/utils/RouterContext';
+import { formatGameStatus } from '@/utils/formatters';
+import { GameStatus } from '@/types/enums';
 
 interface GameCardProps {
   game: Game;
@@ -26,7 +28,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
 
   const handleBoxScoreClick = async (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent triggering the card click
-    if (game.status !== 'scheduled') {
+    if (game.status !== GameStatus.SCHEDULED) {
       const boxScoreUrl = `/games/${game.gameId}/boxscore?status=${game.status}&period=${game.period}&clock=${encodeURIComponent(game.clock)}`;
       try {
         if (router) {
@@ -41,35 +43,12 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
     }
   };
 
-  const formatClock = (clock: string) => {
-    // Handle empty clock for scheduled/finished games
-    if (!clock) return '';
-
-    // If clock is in PT format (PT00M23.70S)
-    if (clock.startsWith('PT')) {
-      const matches = clock.match(/PT(\d+)M([\d.]+)S/);
-      if (matches) {
-        const minutes = parseInt(matches[1]);
-        const seconds = Math.floor(parseFloat(matches[2]));
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      }
-    }
-
-    // If clock is already in correct format or other format, return as is
-    return clock;
-  };
-
-  const formatGameStatus = () => {
-    if (game.status === 'live') {
-      return game.period > 4 
-        ? `OT ${formatClock(game.clock)}`
-        : `Q${game.period} ${formatClock(game.clock)}`;
-    }
-    return game.status.charAt(0).toUpperCase() + game.status.slice(1);
+  const getGameStatusText = (): string => {
+    return formatGameStatus(game.status, game.period, game.clock);
   };
 
   const getBoxScoreButtonStyle = () => {
-    const isGameStarted = game.status !== 'scheduled';
+    const isGameStarted = game.status !== GameStatus.SCHEDULED;
     return `text-xs font-bold ${
       isGameStarted 
         ? 'text-blue-600 bg-blue-50 hover:bg-blue-100 cursor-pointer' 
@@ -107,7 +86,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
                 className="text-xs text-gray-600 bg-gray-100 rounded-full px-3 py-1 w-[80px] text-center" 
                 data-testid="game-status"
               >
-                {formatGameStatus()}
+                {getGameStatusText()}
               </div>
             </div>
             
@@ -136,7 +115,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
               <button 
                 className={getBoxScoreButtonStyle()}
                 onClick={handleBoxScoreClick}
-                disabled={game.status === 'scheduled'}
+                disabled={game.status === GameStatus.SCHEDULED}
                 data-testid="box-score-button"
               >
                 Box Score

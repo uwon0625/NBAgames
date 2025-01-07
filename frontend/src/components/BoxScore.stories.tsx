@@ -3,7 +3,7 @@ import type { Meta, StoryFn } from '@storybook/react';
 import { BoxScore } from './BoxScore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Game, GameBoxScore } from '../types/Game';
-import './BoxScore.stories.css';
+import { GameStatus } from '../types/enums';
 
 // Create a decorator that sets up React Query with mocked data
 const withReactQuery = (Story: StoryFn, context: any) => {
@@ -26,7 +26,7 @@ const withReactQuery = (Story: StoryFn, context: any) => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="storybook-boxscore-wrapper">
+      <div className="p-8 max-w-7xl mx-auto">
         <Story />
       </div>
     </QueryClientProvider>
@@ -36,7 +36,7 @@ const withReactQuery = (Story: StoryFn, context: any) => {
 // Mock data
 const mockGame: Game = {
   gameId: '1234567',
-  status: 'final' as const,
+  status: GameStatus.FINAL,
   period: 4,
   clock: '0:00',
   homeTeam: {
@@ -64,7 +64,7 @@ const mockGame: Game = {
 
 const mockBoxScore: GameBoxScore = {
   gameId: '1234567',
-  status: 'finished',
+  status: GameStatus.FINAL,
   period: 4,
   clock: '0:00',
   startTime: '2024-03-20T19:00:00Z',
@@ -159,12 +159,12 @@ Default.parameters = {
   }
 };
 
-// Loading Story - no need to fetch data
+// Loading Story
 export const Loading: BoxScoreStory = () => (
   <div className="text-center p-4">Loading...</div>
 );
 
-// Error Story - no need to fetch data
+// Error Story
 export const Error: BoxScoreStory = () => (
   <div className="text-center text-red-600 p-4">Error loading box score</div>
 ); 

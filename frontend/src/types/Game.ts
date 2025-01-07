@@ -1,3 +1,5 @@
+import { GameStatus } from './enums';
+
 export interface TeamStats {
   rebounds: number;
   assists: number;
@@ -13,7 +15,7 @@ export interface Team {
 
 export interface Game {
   gameId: string;
-  status: 'scheduled' | 'live' | 'final';
+  status: GameStatus;
   period: number;
   clock: string;
   homeTeam: Team;
@@ -65,8 +67,6 @@ export interface TeamTotals {
   ftm: number;
   fta: number;
 }
-
-export type GameStatus = 'scheduled' | 'in_progress' | 'finished';
 
 export interface GameBoxScore {
   gameId: string;

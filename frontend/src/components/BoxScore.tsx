@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchGame, getBoxScore } from '@/services/api';
 import { PlayerStatsTable } from './PlayerStatsTable';
 import { Game, GameBoxScore } from '@/types/Game';
+import { GameStatus } from '@/types/enums';
+import { formatGameStatus, formatClock } from '@/utils/formatters';
 
 interface BoxScoreProps {
   gameId: string | null;
@@ -58,34 +60,7 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
     return <div className="text-center p-4">No box score available</div>;
   }
 
-  const formatClock = (clock: string | undefined) => {
-    if (!clock) return '';
-
-    // If clock is in PT format (PT00M23.70S)
-    if (clock.startsWith('PT')) {
-      const matches = clock.match(/PT(\d+)M([\d.]+)S/);
-      if (matches) {
-        const minutes = parseInt(matches[1]);
-        const seconds = Math.floor(parseFloat(matches[2]));
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-      }
-    }
-
-    return clock;
-  };
-
-  const formatGameStatus = () => {
-    if (status === 'live' && period && clock) {
-      return period > 4 
-        ? `OT ${formatClock(clock)}`
-        : `Q${period} ${formatClock(clock)}`;
-    }
-    if (status === 'final') {
-      return 'Final';
-    }
-    // For any other status (should only be 'live' without period/clock)
-    return 'In Progress';
-  };
+  const gameStatus = formatGameStatus(status as GameStatus, period, clock);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -100,7 +75,7 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
           <span data-testid="away-team-score">{boxScore.awayTeam.score}</span>
         </div>
         <div className="text-gray-600" data-testid="game-status">
-          {formatGameStatus()}
+          {gameStatus}
         </div>
       </div>
 

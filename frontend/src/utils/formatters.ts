@@ -1,65 +1,68 @@
-export const formatGameTime = (status: string, period: number | string, clock?: string): string => {
-  // Handle final status
-  if (status === 'final' || status === 'finished') {
-    return 'Final';
+import { GameStatus } from '@/types/enums';
+
+export const formatClock = (clock: string | undefined): string => {
+  if (!clock) return '';
+
+  // Handle PT format (PT00M23.70S)
+  if (clock.startsWith('PT')) {
+    const matches = clock.match(/PT(\d+)M([\d.]+)S/);
+    if (matches) {
+      const minutes = parseInt(matches[1]);
+      const seconds = Math.floor(parseFloat(matches[2]));
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
   }
 
-  // Handle scheduled games
-  if (status === 'scheduled') {
-    return 'Scheduled';
-  }
-
-  // Handle live games
-  if (status === 'live' || status === 'in_progress') {
-    // If no clock, just show the period
-    if (!clock) {
-      return `Q${period}`;
-    }
-
-    // Handle "PT00M23.70S" format
-    if (clock.startsWith('PT')) {
-      const minutes = clock.match(/(\d+)M/)?.[1] || '0';
-      const seconds = clock.match(/(\d+\.\d+)S|(\d+)S/)?.[1] || '0';
-      
-      // If time is 0:00, show just the quarter
-      if (minutes === '0' && parseFloat(seconds) === 0) {
-        return `Q${period}`;
-      }
-      
-      // Format as MM:SS
-      return `Q${period} ${minutes}:${Math.floor(parseFloat(seconds)).toString().padStart(2, '0')}`;
-    }
-
-    // Handle simple minute format (e.g., "36")
-    if (!isNaN(Number(clock))) {
-      return `${clock}:00`;
-    }
-
-    // Handle "MM:SS" format
-    if (clock.includes(':')) {
-      return `Q${period} ${clock}`;
-    }
-
+  // Handle MM:SS format
+  if (clock.includes(':')) {
     return clock;
   }
 
-  return '';
+  // Handle simple minute format
+  if (!isNaN(Number(clock))) {
+    return `${clock}:00`;
+  }
+
+  return clock;
+};
+
+export const formatGameStatus = (status: GameStatus, period?: number, clock?: string): string => {
+  if (status === GameStatus.LIVE && period) {
+    if (period > 4) {
+      return `OT ${formatClock(clock)}`;
+    }
+    return `Q${period} ${formatClock(clock)}`;
+  }
+
+  if (status === GameStatus.FINAL) {
+    return 'Final';
+  }
+
+  return 'Scheduled';
 };
 
 export const formatPlayTime = (minutes: string): string => {
-  // Handle "PT36M" format
+  // Handle PT format (PT36M00S)
   if (minutes.startsWith('PT')) {
-    const mins = minutes.match(/(\d+)M/)?.[1];
-    if (mins) {
-      return mins;
+    const matches = minutes.match(/PT(\d+)M/);
+    if (matches) {
+      return matches[1];
     }
   }
 
-  // Handle "MM:SS" format
+  // Handle MM:SS format
   if (minutes.includes(':')) {
     return minutes;
   }
 
-  // Return as-is if no special formatting needed
   return minutes;
+};
+
+export const formatShootingStats = (made: number, attempted: number): string => {
+  return `${made}-${attempted}`;
+};
+
+export const formatPercentage = (made: number, attempted: number): string => {
+  if (attempted === 0) return '0.0';
+  return ((made / attempted) * 100).toFixed(1);
 }; 
