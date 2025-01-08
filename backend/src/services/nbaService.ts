@@ -23,7 +23,12 @@ const axiosConfig = {
 export async function fetchNBAScoreboard() {
   if (USE_MOCK_DATA) {
     logger.info('Using mock scoreboard data');
-    return mockScoreboard.scoreboard;
+    const data = mockScoreboard.scoreboard;
+    logger.info('Mock data structure:', {
+      gameCount: data.games.length,
+      sampleGame: data.games[0]
+    });
+    return data;
   }
 
   try {
@@ -59,10 +64,74 @@ export async function fetchNBABoxScore(gameId: string) {
   }
 }
 
+export function transformNBAGame(nbaGame: NBAGame): GameScore {
+  const transformTeam = (team: any) => {
+    // Parse all string values to numbers
+    const stats = {
+      rebounds: parseInt(team.statistics?.reboundsDefensive || '0') + 
+                parseInt(team.statistics?.reboundsOffensive || '0'),
+      assists: parseInt(team.statistics?.assists || '0'),
+      blocks: parseInt(team.statistics?.blocks || '0')
+    };
+
+    logger.info(`Transformed team stats for ${team.teamTricode}:`, {
+      rawStats: team.statistics,
+      parsedStats: stats
+    });
+
+    return {
+      teamId: team.teamId.toString(),
+      teamTricode: team.teamTricode,
+      score: parseInt(team.score.toString() || '0'),
+      stats
+    };
+  };
+
+  const mapGameStatus = (status: number, statusText: string): 'scheduled' | 'live' | 'final' => {
+    logger.info(`Mapping game status for game ${nbaGame.gameId}:`, {
+      rawStatus: status,
+      rawStatusText: statusText,
+      mappedStatus: status === 2 ? 'live' : status === 3 ? 'final' : 'scheduled'
+    });
+    
+    switch (status) {
+      case 2:
+        return 'live';
+      case 3:
+        return 'final';
+      default:
+        return 'scheduled';
+    }
+  };
+
+  const transformed = {
+    gameId: nbaGame.gameId,
+    status: mapGameStatus(nbaGame.gameStatus, nbaGame.gameStatusText),
+    period: parseInt(nbaGame.period.toString() || '0'),
+    clock: nbaGame.gameClock || '',
+    homeTeam: transformTeam(nbaGame.homeTeam),
+    awayTeam: transformTeam(nbaGame.awayTeam),
+    lastUpdate: Date.now()
+  };
+
+  logger.info(`Transformed game ${nbaGame.gameId}:`, {
+    rawGame: {
+      status: nbaGame.gameStatus,
+      statusText: nbaGame.gameStatusText,
+      homeTeam: nbaGame.homeTeam,
+      awayTeam: nbaGame.awayTeam
+    },
+    transformedGame: transformed
+  });
+
+  return transformed;
+}
+
 export async function fetchGameById(gameId: string) {
   try {
     const scoreboard = await fetchNBAScoreboard();
-    return scoreboard.games.find((game: NBAGame) => game.gameId === gameId) || null;
+    const game = scoreboard.games.find((game: NBAGame) => game.gameId === gameId);
+    return game ? transformNBAGame(game) : null;
   } catch (error) {
     logger.error(`Failed to fetch game ${gameId}:`, error);
     throw error;
@@ -72,9 +141,54 @@ export async function fetchGameById(gameId: string) {
 export async function fetchLiveGames(): Promise<GameScore[]> {
   try {
     const scoreboard = await fetchNBAScoreboard();
-    return scoreboard.games.filter((game: NBAGame) => game.gameStatus === 2);
+    return scoreboard.games
+      .filter((game: NBAGame) => game.gameStatus === 2)
+      .map(transformNBAGame);
   } catch (error) {
     logger.error('Failed to fetch live games:', error);
+    throw error;
+  }
+}
+
+export async function getGames(): Promise<GameScore[]> {
+  try {
+    const scoreboard = await fetchNBAScoreboard();
+    logger.info('Raw scoreboard data:', {
+      gameCount: scoreboard.games.length,
+      gameStatuses: scoreboard.games.map((g: NBAGame) => g.gameStatus)
+    });
+
+    // Transform each game
+    const transformedGames = scoreboard.games.map((game: NBAGame) => {
+      const transformedGame = transformNBAGame(game);
+      logger.info(`Transformed game ${game.gameId}:`, {
+        rawStatus: game.gameStatus,
+        transformedStatus: transformedGame.status,
+        rawStats: {
+          home: game.homeTeam.statistics,
+          away: game.awayTeam.statistics
+        },
+        transformedStats: {
+          home: transformedGame.homeTeam.stats,
+          away: transformedGame.awayTeam.stats
+        }
+      });
+      return transformedGame;
+    });
+
+    logger.info('All transformed games:', {
+      count: transformedGames.length,
+      statuses: transformedGames.map((g: GameScore) => g.status),
+      stats: transformedGames.map((g: GameScore) => ({
+        id: g.gameId,
+        homeStats: g.homeTeam.stats,
+        awayStats: g.awayTeam.stats
+      }))
+    });
+    
+    return transformedGames;
+  } catch (error) {
+    logger.error('Failed to get games:', error);
     throw error;
   }
 }
@@ -110,6 +224,16 @@ export function transformNBABoxScore(nbaBoxScore: any, parentGame?: GameScore): 
     };
   };
 
+  // More strict arena name extraction
+  let arenaName = '';
+  if (nbaBoxScore.arena) {
+    if (typeof nbaBoxScore.arena === 'string') {
+      arenaName = nbaBoxScore.arena;
+    } else if (typeof nbaBoxScore.arena === 'object' && nbaBoxScore.arena.arenaName) {
+      arenaName = nbaBoxScore.arena.arenaName;
+    }
+  }
+
   return {
     gameId: nbaBoxScore.gameId,
     status: parentGame?.status || 'scheduled',
@@ -117,7 +241,7 @@ export function transformNBABoxScore(nbaBoxScore: any, parentGame?: GameScore): 
     clock: parentGame?.clock || nbaBoxScore.gameClock || '',
     homeTeam: transformTeam(nbaBoxScore.homeTeam),
     awayTeam: transformTeam(nbaBoxScore.awayTeam),
-    arena: nbaBoxScore.arena?.arenaName || '',
+    arena: arenaName,
     attendance: nbaBoxScore.attendance || 0,
     lastUpdate: Date.now()
   };

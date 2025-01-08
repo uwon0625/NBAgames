@@ -41,7 +41,9 @@ export const formatGameStatus = (status: GameStatus, period?: number, clock?: st
   return 'Scheduled';
 };
 
-export const formatPlayTime = (minutes: string): string => {
+export const formatPlayTime = (minutes: string | undefined | null): string => {
+  if (!minutes) return '0';
+
   // Handle PT format (PT36M00S)
   if (minutes.startsWith('PT')) {
     const matches = minutes.match(/PT(\d+)M/);

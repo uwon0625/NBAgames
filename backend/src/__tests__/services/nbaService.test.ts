@@ -1,5 +1,6 @@
-import { transformNBABoxScore } from '../../services/nbaService';
-import { GameBoxScore } from '../../types';
+import { transformNBABoxScore, transformNBAGame } from '../../services/nbaService';
+import { GameBoxScore, NBAGame } from '../../types';
+import { mockScoreboard } from '../../services/mockData';
 
 describe('nbaService', () => {
   describe('transformNBABoxScore', () => {
@@ -106,6 +107,70 @@ describe('nbaService', () => {
         },
         arena: 'Crypto.com Arena',
         attendance: 18997
+      });
+    });
+  });
+
+  describe('transformNBAGame', () => {
+    it('correctly transforms game data', () => {
+      const mockGame: NBAGame = {
+        gameId: '0022400476',
+        gameStatus: 2,
+        gameStatusText: 'In Progress',
+        period: 3,
+        gameClock: 'PT05M30.00S',
+        homeTeam: {
+          teamId: 1610612758,
+          teamTricode: 'SAC',
+          score: 100,
+          statistics: {
+            reboundsDefensive: '30',
+            reboundsOffensive: '10',
+            assists: '25',
+            blocks: '5'
+          }
+        },
+        awayTeam: {
+          teamId: 1610612763,
+          teamTricode: 'MEM',
+          score: 100,
+          statistics: {
+            reboundsDefensive: '28',
+            reboundsOffensive: '12',
+            assists: '22',
+            blocks: '4'
+          }
+        }
+      };
+
+      const result = transformNBAGame(mockGame);
+      
+      expect(result).toEqual({
+        gameId: '0022400476',
+        status: 'live',
+        period: 3,
+        clock: 'PT05M30.00S',
+        homeTeam: {
+          teamId: '1610612758',
+          teamTricode: 'SAC',
+          score: 100,
+          stats: {
+            rebounds: 40, // 30 + 10
+            assists: 25,
+            blocks: 5
+          }
+        },
+        awayTeam: {
+          teamId: '1610612763',
+          teamTricode: 'MEM',
+          score: 100,
+          stats: {
+            rebounds: 40, // 28 + 12
+            assists: 22,
+            blocks: 4
+          }
+        },
+        lastUpdate: expect.any(Number)
       });
     });
   });

@@ -6,7 +6,7 @@ import { fetchGame, getBoxScore } from '@/services/api';
 import { PlayerStatsTable } from './PlayerStatsTable';
 import { Game, GameBoxScore } from '@/types/Game';
 import { GameStatus } from '@/types/enums';
-import { formatGameStatus, formatClock } from '@/utils/formatters';
+import { formatGameStatus } from '@/utils/formatters';
 
 interface BoxScoreProps {
   gameId: string | null;
@@ -56,24 +56,22 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
     );
   }
 
-  if (!game || !boxScore) {
+  if (!boxScore) {
     return <div className="text-center p-4">No box score available</div>;
   }
 
-  const gameStatus = formatGameStatus(status as GameStatus, period, clock);
+  const gameStatus = formatGameStatus(
+    status as GameStatus || boxScore.status,
+    period || boxScore.period,
+    clock || boxScore.clock
+  );
+
+  const hasGameInfo = boxScore.arena || (typeof boxScore.attendance === 'number' && boxScore.attendance > 0);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* Game Header */}
-      <div className="text-center mb-8">
-        <div className="text-2xl font-bold mb-2" data-testid="game-header">
-          {boxScore.homeTeam.teamTricode} vs {boxScore.awayTeam.teamTricode}
-        </div>
-        <div className="text-xl">
-          <span data-testid="home-team-score">{boxScore.homeTeam.score}</span>
-          {' - '}
-          <span data-testid="away-team-score">{boxScore.awayTeam.score}</span>
-        </div>
+    <div className="space-y-8">
+      {/* Game Status */}
+      <div className="text-center">
         <div className="text-gray-600" data-testid="game-status">
           {gameStatus}
         </div>
@@ -107,10 +105,12 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
       </div>
 
       {/* Game Info */}
-      {boxScore.arena && (
+      {hasGameInfo && (
         <div className="mt-8 text-center text-gray-600">
-          <p>{boxScore.arena}</p>
-          <p>Attendance: {boxScore.attendance?.toLocaleString()}</p>
+          {boxScore.arena && <p>{boxScore.arena}</p>}
+          {typeof boxScore.attendance === 'number' && boxScore.attendance > 0 && (
+            <p>Attendance: {boxScore.attendance.toLocaleString()}</p>
+          )}
         </div>
       )}
     </div>

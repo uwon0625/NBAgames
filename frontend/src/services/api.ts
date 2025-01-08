@@ -3,20 +3,44 @@ import { GameStatus } from '@/types/enums';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-export async function fetchGame(gameId: string | null): Promise<Game | undefined> {
-  if (!gameId) return undefined;
+export async function fetchGame(gameId: string | null): Promise<Game> {
+  if (!gameId) {
+    throw new Error('Game ID is required');
+  }
   
   try {
-    const response = await fetch(`${API_BASE_URL}/api/games`);
+    // First try to get the specific game
+    const response = await fetch(`${API_BASE_URL}/api/games/${gameId}`);
+    
     if (!response.ok) {
+      if (response.status === 404) {
+        // Return a placeholder game object for not found games
+        return {
+          gameId,
+          status: GameStatus.SCHEDULED,
+          period: 0,
+          clock: '',
+          homeTeam: {
+            teamId: '',
+            teamTricode: 'TBD',
+            score: 0,
+            stats: { rebounds: 0, assists: 0, blocks: 0 }
+          },
+          awayTeam: {
+            teamId: '',
+            teamTricode: 'TBD',
+            score: 0,
+            stats: { rebounds: 0, assists: 0, blocks: 0 }
+          },
+          lastUpdate: Date.now()
+        };
+      }
       throw new Error(`API responded with status: ${response.status}`);
     }
-    const games = await response.json();
-    const game = games.find((game: Game) => game.gameId === gameId);
-    if (!game) {
-      throw new Error(`Game ${gameId} not found`);
-    }
+
+    const game = await response.json();
     return game;
+
   } catch (error) {
     console.error('Failed to fetch game:', error);
     throw error;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useContext } from 'react';
+import React, { useContext, useCallback } from 'react';
 import { Game } from '@/types/Game';
 import { RouterContext } from '@/utils/RouterContext';
 import { formatGameStatus } from '@/utils/formatters';
@@ -10,8 +10,16 @@ interface GameCardProps {
   game: Game;
 }
 
+const defaultStats = {
+  rebounds: 0,
+  assists: 0,
+  blocks: 0
+};
+
 export const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const router = useContext(RouterContext);
+  const homeStats = game.homeTeam?.stats || defaultStats;
+  const awayStats = game.awayTeam?.stats || defaultStats;
 
   const handleClick = () => {
     try {
@@ -43,10 +51,6 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
     }
   };
 
-  const getGameStatusText = (): string => {
-    return formatGameStatus(game.status, game.period, game.clock);
-  };
-
   const getBoxScoreButtonStyle = () => {
     const isGameStarted = game.status !== GameStatus.SCHEDULED;
     return `text-xs font-bold ${
@@ -58,12 +62,11 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div 
+      <div
         className="bg-gradient-to-br from-white to-gray-50 rounded-lg shadow-md px-6 py-4 cursor-pointer hover:shadow-lg transition-all hover:from-gray-50 hover:to-white"
         onClick={handleClick}
         data-testid={`game-card-${game.gameId}`}
       >
-        {/* Stats Header */}
         <div data-testid="stats-container" className="grid grid-cols-8 text-xs text-gray-500 mb-2">
           <div className="col-span-2"></div>
           <div className="col-span-3 grid grid-cols-2 gap-1 pl-8">
@@ -86,25 +89,25 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
                 className="text-xs text-gray-600 bg-gray-100 rounded-full px-3 py-1 w-[80px] text-center" 
                 data-testid="game-status"
               >
-                {getGameStatusText()}
+                {formatGameStatus(game.status, game.period, game.clock)}
               </div>
             </div>
-            
+
             {/* Team and Score Container */}
             <div className="col-span-3 grid grid-cols-2 gap-1 pl-8">
               <div className="text-lg font-bold" data-testid="away-team-tricode">
-                {game.awayTeam.teamTricode}
+                {game.awayTeam?.teamTricode || 'TBD'}
               </div>
               <div className="text-lg font-bold text-center" data-testid="away-team-score">
-                {game.awayTeam.score}
+                {game.awayTeam?.score || 0}
               </div>
             </div>
 
             {/* Stats Container */}
             <div className="col-span-3 grid grid-cols-3 gap-1 pl-8">
-              <div className="text-center" data-testid="away-team-rebounds">{game.awayTeam.stats.rebounds}</div>
-              <div className="text-center" data-testid="away-team-assists">{game.awayTeam.stats.assists}</div>
-              <div className="text-center" data-testid="away-team-blocks">{game.awayTeam.stats.blocks}</div>
+              <div className="text-center" data-testid="away-team-rebounds">{awayStats.rebounds}</div>
+              <div className="text-center" data-testid="away-team-assists">{awayStats.assists}</div>
+              <div className="text-center" data-testid="away-team-blocks">{awayStats.blocks}</div>
             </div>
           </div>
 
@@ -125,18 +128,18 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
             {/* Team and Score Container */}
             <div className="col-span-3 grid grid-cols-2 gap-1 pl-8">
               <div className="text-lg font-bold" data-testid="home-team-tricode">
-                {game.homeTeam.teamTricode}
+                {game.homeTeam?.teamTricode || 'TBD'}
               </div>
               <div className="text-lg font-bold text-center" data-testid="home-team-score">
-                {game.homeTeam.score}
+                {game.homeTeam?.score || 0}
               </div>
             </div>
 
             {/* Stats Container */}
             <div className="col-span-3 grid grid-cols-3 gap-1 pl-8">
-              <div className="text-center" data-testid="home-team-rebounds">{game.homeTeam.stats.rebounds}</div>
-              <div className="text-center" data-testid="home-team-assists">{game.homeTeam.stats.assists}</div>
-              <div className="text-center" data-testid="home-team-blocks">{game.homeTeam.stats.blocks}</div>
+              <div className="text-center" data-testid="home-team-rebounds">{homeStats.rebounds}</div>
+              <div className="text-center" data-testid="home-team-assists">{homeStats.assists}</div>
+              <div className="text-center" data-testid="home-team-blocks">{homeStats.blocks}</div>
             </div>
           </div>
         </div>

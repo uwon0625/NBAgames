@@ -4,10 +4,26 @@ import { formatPlayTime, formatShootingStats } from '@/utils/formatters';
 
 interface PlayerStatsTableProps {
   players: PlayerStats[];
-  totals: TeamTotals;
+  totals?: TeamTotals;
 }
 
-export const PlayerStatsTable: React.FC<PlayerStatsTableProps> = ({ players, totals }) => {
+export const PlayerStatsTable: React.FC<PlayerStatsTableProps> = ({ 
+  players, 
+  totals = {
+    points: 0,
+    rebounds: 0,
+    assists: 0,
+    steals: 0,
+    blocks: 0,
+    personalFouls: 0,
+    fgm: 0,
+    fga: 0,
+    threePm: 0,
+    threePa: 0,
+    ftm: 0,
+    fta: 0
+  }
+}) => {
   return (
     <table className="w-full">
       <thead>
@@ -28,18 +44,18 @@ export const PlayerStatsTable: React.FC<PlayerStatsTableProps> = ({ players, tot
         {players.map((player, index) => (
           <tr key={`${player.playerId}_${index}`} className="text-sm">
             <td>{player.name}</td>
-            <td className="text-right">{formatPlayTime(player.minutes)}</td>
-            <td className="text-right">{player.points}</td>
-            <td className="text-right">{player.rebounds}</td>
-            <td className="text-right">{player.assists}</td>
-            <td className="text-right">{player.blocks}</td>
-            <td className="text-right">{player.personalFouls}</td>
-            <td className="text-right">{formatShootingStats(player.fgm, player.fga)}</td>
-            <td className="text-right">{formatShootingStats(player.threePm, player.threePa)}</td>
-            <td className="text-right">{formatShootingStats(player.ftm, player.fta)}</td>
+            <td className="text-right">{formatPlayTime(player.minutes || '0')}</td>
+            <td className="text-right">{player.points || 0}</td>
+            <td className="text-right">{player.rebounds || 0}</td>
+            <td className="text-right">{player.assists || 0}</td>
+            <td className="text-right">{player.blocks || 0}</td>
+            <td className="text-right">{player.personalFouls || 0}</td>
+            <td className="text-right">{formatShootingStats(player.fgm || 0, player.fga || 0)}</td>
+            <td className="text-right">{formatShootingStats(player.threePm || 0, player.threePa || 0)}</td>
+            <td className="text-right">{formatShootingStats(player.ftm || 0, player.fta || 0)}</td>
           </tr>
         ))}
-        <tr key={`totals_${players[0]?.playerId}`} className="font-bold border-t text-sm">
+        <tr key="totals" className="font-bold border-t text-sm">
           <td>Team Totals</td>
           <td className="text-right">-</td>
           <td className="text-right">{totals.points}</td>

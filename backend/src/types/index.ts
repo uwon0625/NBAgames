@@ -134,8 +134,28 @@ export interface NBAGame {
   gameStatusText: string;
   period: number;
   gameClock: string;
-  homeTeam: NBATeam;
-  awayTeam: NBATeam;
+  homeTeam: {
+    teamId: number;
+    teamTricode: string;
+    score: number;
+    statistics: {
+      reboundsDefensive: string;
+      reboundsOffensive: string;
+      assists: string;
+      blocks: string;
+    };
+  };
+  awayTeam: {
+    teamId: number;
+    teamTricode: string;
+    score: number;
+    statistics: {
+      reboundsDefensive: string;
+      reboundsOffensive: string;
+      assists: string;
+      blocks: string;
+    };
+  };
   gameLeaders?: {
     homeLeaders: NBAGameLeaders;
     awayLeaders: NBAGameLeaders;
