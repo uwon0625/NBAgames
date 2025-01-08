@@ -1,14 +1,19 @@
 import { GameScore, GameBoxScore } from '../types';
-import { fetchNBAScoreboard, fetchNBABoxScore, fetchGameById } from './nbaService';
+import { getGames as getNBAGames, getGameBoxScore as getNBABoxScore } from './nbaService';
 import { logger } from '../config/logger';
 import { CacheService } from './cacheService';
+import { generateGames, generateBoxScore } from '../testData/generateGames';
 
 export class GameService {
   private cacheService: CacheService;
-  private lastGameStates: Map<string, string> = new Map();
+  private lastGameStates: Map<string, string> = new Map(); // gameId -> hash of game state
 
   constructor() {
     this.cacheService = new CacheService();
+  }
+
+  public async cacheGame(gameId: string, game: GameScore): Promise<void> {
+    await this.cacheService.cacheGameScore(gameId, game);
   }
 
   private getGameStateHash(game: GameScore): string {
@@ -28,31 +33,23 @@ export class GameService {
     return JSON.stringify(relevantData);
   }
 
-  async cacheGameScore(gameId: string, game: GameScore): Promise<void> {
-    await this.cacheService.cacheGameScore(gameId, game);
-  }
-
   async getGame(gameId: string): Promise<GameScore | null> {
-    try {
-      // Try cache first
-      const cached = await this.cacheService.getCachedGame(gameId);
-      if (cached) {
-        return cached;
-      }
-
-      // If not in cache, fetch from API
-      const game = await fetchGameById(gameId);
-      if (!game) {
-        return null;
-      }
-
-      // Cache the result
-      await this.cacheGameScore(gameId, game);
-      return game;
-    } catch (error) {
-      logger.error(`Failed to get game ${gameId}:`, error);
-      return null;
+    // Try cache first
+    const cached = await this.cacheService.getCachedGame(gameId);
+    if (cached) {
+      return cached;
     }
+
+    // If not in cache, get from list of games
+    const { games } = await this.getGames();
+    const game = games.find(g => g.gameId === gameId);
+    
+    // Cache the result if it exists
+    if (game) {
+      await this.cacheService.cacheGameScore(gameId, game);
+    }
+    
+    return game || null;
   }
 
   async getBoxScore(gameId: string): Promise<GameBoxScore | null> {
@@ -63,28 +60,27 @@ export class GameService {
         return cached;
       }
 
-      // If not in cache, fetch from API
-      const boxScore = await fetchNBABoxScore(gameId);
-      if (!boxScore) {
-        return null;
+      // If not in cache, get from NBA API
+      const boxScore = await getNBABoxScore(gameId);
+      
+      // Cache the result if it exists
+      if (boxScore) {
+        await this.cacheService.cacheBoxScore(gameId, boxScore);
       }
-
-      // Cache the result
-      await this.cacheService.cacheBoxScore(gameId, boxScore);
+      
       return boxScore;
     } catch (error) {
       logger.error(`Failed to get box score for game ${gameId}:`, error);
-      return null;
+      throw error;
     }
   }
 
   async getGames(): Promise<{ games: GameScore[], changedGameIds: string[] }> {
     try {
-      const scoreboard = await fetchNBAScoreboard();
-      const games = scoreboard.games as GameScore[];
+      const games = await getNBAGames();
       const changedGameIds: string[] = [];
 
-      games.forEach((game: GameScore) => {
+      games.forEach(game => {
         const newStateHash = this.getGameStateHash(game);
         const oldStateHash = this.lastGameStates.get(game.gameId);
         

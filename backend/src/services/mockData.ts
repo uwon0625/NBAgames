@@ -2,34 +2,92 @@ export const mockScoreboard = {
   scoreboard: {
     games: [
       {
+        // Live game
         gameId: '0022400476',
         gameStatus: 2,
+        gameStatusText: 'In Progress',
         period: 3,
         gameClock: 'PT05M30.00S',
         homeTeam: {
           teamId: 1610612758,
           teamTricode: 'SAC',
           score: 100,
-          teamStats: {
-            totals: {
-              points: 100,
-              rebounds: 40,
-              assists: 25,
-              blocks: 5
-            }
+          statistics: {
+            reboundsDefensive: '30',
+            reboundsOffensive: '10',
+            assists: '25',
+            blocks: '5'
           }
         },
         awayTeam: {
           teamId: 1610612763,
           teamTricode: 'MEM',
-          score: 100,
-          teamStats: {
-            totals: {
-              points: 100,
-              rebounds: 40,
-              assists: 22,
-              blocks: 4
-            }
+          score: 98,
+          statistics: {
+            reboundsDefensive: '28',
+            reboundsOffensive: '12',
+            assists: '22',
+            blocks: '4'
+          }
+        }
+      },
+      {
+        // Finished game
+        gameId: '0022400477',
+        gameStatus: 3,
+        gameStatusText: 'Final',
+        period: 4,
+        gameClock: '',
+        homeTeam: {
+          teamId: 1610612744,
+          teamTricode: 'GSW',
+          score: 120,
+          statistics: {
+            reboundsDefensive: '35',
+            reboundsOffensive: '8',
+            assists: '30',
+            blocks: '6'
+          }
+        },
+        awayTeam: {
+          teamId: 1610612747,
+          teamTricode: 'LAL',
+          score: 115,
+          statistics: {
+            reboundsDefensive: '32',
+            reboundsOffensive: '9',
+            assists: '25',
+            blocks: '3'
+          }
+        }
+      },
+      {
+        // Scheduled game
+        gameId: '0022400478',
+        gameStatus: 1,
+        gameStatusText: 'Scheduled',
+        period: 0,
+        gameClock: '',
+        homeTeam: {
+          teamId: 1610612738,
+          teamTricode: 'BOS',
+          score: 0,
+          statistics: {
+            reboundsDefensive: '0',
+            reboundsOffensive: '0',
+            assists: '0',
+            blocks: '0'
+          }
+        },
+        awayTeam: {
+          teamId: 1610612751,
+          teamTricode: 'BKN',
+          score: 0,
+          statistics: {
+            reboundsDefensive: '0',
+            reboundsOffensive: '0',
+            assists: '0',
+            blocks: '0'
           }
         }
       }
@@ -63,34 +121,30 @@ export const mockBoxScore = {
       },
       players: [
         {
-          personId: "2544",
-          firstName: "LeBron",
-          familyName: "James",
+          playerId: "2544",
+          name: "LeBron James",
           position: "F",
-          statistics: {
-            minutesCalculated: "PT00M00S",
-            points: "0",
-            reboundsDefensive: "0",
-            reboundsOffensive: "0",
-            assists: "0",
-            steals: "0",
-            blocks: "0",
-            fieldGoalsMade: "0",
-            fieldGoalsAttempted: "0",
-            threePointersMade: "0",
-            threePointersAttempted: "0",
-            freeThrowsMade: "0",
-            freeThrowsAttempted: "0",
-            plusMinusPoints: "0"
-          }
+          minutes: "28:35",
+          points: 25,
+          rebounds: 8,
+          assists: 8,
+          steals: 2,
+          blocks: 1,
+          personalFouls: 2,
+          fgm: 10,
+          fga: 15,
+          threePm: 3,
+          threePa: 6,
+          ftm: 2,
+          fta: 3,
+          plusMinus: 12
         }
-        // Add more players
       ]
     },
     awayTeam: {
       teamId: 1610612763,
       teamTricode: 'MEM',
-      score: 100,
+      score: 82,
       statistics: {
         reboundsDefensive: '28',
         reboundsOffensive: '12',
@@ -105,28 +159,24 @@ export const mockBoxScore = {
       },
       players: [
         {
-          personId: "2544",
-          firstName: "LeBron",
-          familyName: "James",
-          position: "F",
-          statistics: {
-            minutesCalculated: "PT00M00S",
-            points: "0",
-            reboundsDefensive: "0",
-            reboundsOffensive: "0",
-            assists: "0",
-            steals: "0",
-            blocks: "0",
-            fieldGoalsMade: "0",
-            fieldGoalsAttempted: "0",
-            threePointersMade: "0",
-            threePointersAttempted: "0",
-            freeThrowsMade: "0",
-            freeThrowsAttempted: "0",
-            plusMinusPoints: "0"
-          }
+          playerId: "1628991",
+          name: "Ja Morant",
+          position: "G",
+          minutes: "26:42",
+          points: 22,
+          rebounds: 4,
+          assists: 9,
+          steals: 1,
+          blocks: 0,
+          personalFouls: 3,
+          fgm: 8,
+          fga: 14,
+          threePm: 2,
+          threePa: 5,
+          ftm: 4,
+          fta: 5,
+          plusMinus: -8
         }
-        // Add more players
       ]
     },
     arena: {

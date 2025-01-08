@@ -1,17 +1,36 @@
-import express, { Request, Response, Router } from 'express';
-import { getCacheStatus } from '../services/nbaService';
+import express from 'express';
+import { getGames, getGameBoxScore } from '../services/nbaService';
+import { logger } from '../config/logger';
 
-const router = Router();
+const router = express.Router();
 
-// Add cache status route
-router.get('/cache/status', async (req: Request, res: Response) => {
+// GET /api/games
+router.get('/games', async (req, res) => {
   try {
-    const status = await getCacheStatus();
-    res.json(status);
+    const games = await getGames();
+    res.json(games);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to get cache status' });
+    logger.error('Failed to get games:', error);
+    res.status(500).json({ error: 'Failed to get games' });
   }
 });
 
-// Export the router
+// GET /api/games/:gameId/boxscore
+router.get('/games/:gameId/boxscore', async (req, res) => {
+  try {
+    const { gameId } = req.params;
+    const boxScore = await getGameBoxScore(gameId);
+    
+    if (!boxScore) {
+      res.status(404).json({ error: 'Box score not found' });
+      return;
+    }
+    
+    res.json(boxScore);
+  } catch (error) {
+    logger.error(`Failed to get box score for game ${req.params.gameId}:`, error);
+    res.status(500).json({ error: 'Failed to get box score' });
+  }
+});
+
 export default router; 

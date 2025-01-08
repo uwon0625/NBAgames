@@ -5,10 +5,40 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as api from '@/services/api';
 import { Game, GameBoxScore } from '@/types/Game';
 import { GameStatus } from '@/types/enums';
+import { RouterContext } from '@/utils/RouterContext';
 
 // Mock the API module
 jest.mock('@/services/api');
 const mockedApi = api as jest.Mocked<typeof api>;
+
+// Mock router
+const mockRouter = {
+  push: jest.fn(),
+  back: jest.fn(),
+  forward: jest.fn(),
+  refresh: jest.fn(),
+  prefetch: jest.fn(),
+  replace: jest.fn()
+};
+
+// Custom render function with all providers
+const renderWithProviders = (ui: React.ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false
+      }
+    }
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterContext.Provider value={mockRouter}>
+        {ui}
+      </RouterContext.Provider>
+    </QueryClientProvider>
+  );
+};
 
 describe('BoxScore', () => {
   const mockGame: Game = {
@@ -146,16 +176,12 @@ describe('BoxScore', () => {
     // Setup API mocks
     mockedApi.fetchGame.mockResolvedValue(mockGame);
     mockedApi.getBoxScore.mockResolvedValue(mockBoxScore);
+    // Clear router mocks
+    jest.clearAllMocks();
   });
 
   it('renders box score correctly', async () => {
-    const queryClient = new QueryClient();
-    
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
-      </QueryClientProvider>
-    );
+    renderWithProviders(<BoxScore gameId="1234567" />);
     
     // Wait for data to load
     expect(await screen.findByText('LAL')).toBeInTheDocument();
@@ -163,12 +189,7 @@ describe('BoxScore', () => {
   });
 
   it('renders game header with scores', async () => {
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
-      </QueryClientProvider>
-    );
+    renderWithProviders(<BoxScore gameId="1234567" />);
     
     expect(await screen.findByTestId('game-header')).toHaveTextContent('LAL vs GSW');
     expect(await screen.findByTestId('home-team-score')).toHaveTextContent('55');
@@ -176,65 +197,52 @@ describe('BoxScore', () => {
   });
 
   it('renders player stats correctly', async () => {
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
-      </QueryClientProvider>
-    );
+    renderWithProviders(<BoxScore gameId="1234567" />);
     expect(await screen.findByText('LeBron James')).toBeInTheDocument();
     expect(await screen.findByText('Stephen Curry')).toBeInTheDocument();
   });
 
   it('formats player minutes correctly', async () => {
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
-      </QueryClientProvider>
-    );
+    renderWithProviders(<BoxScore gameId="1234567" />);
     expect(await screen.findByText('24:30')).toBeInTheDocument();
   });
 
   it('renders team totals', async () => {
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
-      </QueryClientProvider>
-    );
+    renderWithProviders(<BoxScore gameId="1234567" />);
     expect(await screen.findAllByText('Team Totals')).toHaveLength(2);
   });
 
   it('renders game information', async () => {
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
-      </QueryClientProvider>
-    );
+    renderWithProviders(<BoxScore gameId="1234567" />);
     expect(await screen.findByText(/Crypto\.com Arena/)).toBeInTheDocument();
     expect(await screen.findByText(/18,997/)).toBeInTheDocument();
   });
 
   it('displays correct shooting percentages', async () => {
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" />
-      </QueryClientProvider>
-    );
+    renderWithProviders(<BoxScore gameId="1234567" />);
     expect(await screen.findByText('6-10')).toBeInTheDocument(); // LeBron FG
     expect(await screen.findByText('7-12')).toBeInTheDocument(); // Curry FG
   });
 
   it('shows game status', async () => {
-    const queryClient = new QueryClient();
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BoxScore gameId="1234567" status={GameStatus.LIVE} period={2} clock="5:30" />
-      </QueryClientProvider>
+    renderWithProviders(
+      <BoxScore 
+        gameId="1234567" 
+        status={GameStatus.LIVE} 
+        period={2} 
+        clock="5:30" 
+      />
     );
+    
     expect(await screen.findByTestId('game-status')).toHaveTextContent('Q2 5:30');
+  });
+
+  it('handles back button click', async () => {
+    renderWithProviders(<BoxScore gameId="1234567" />);
+    
+    const backButton = await screen.findByText('Back to Today\'s Games');
+    backButton.click();
+    
+    expect(mockRouter.push).toHaveBeenCalledWith('/');
   });
 }); 

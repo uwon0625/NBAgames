@@ -80,10 +80,19 @@ describe('GameCard', () => {
     );
   });
 
-  it('navigates to game details on card click', () => {
-    const { mockRouter } = renderWithRouter(<GameCard game={mockGame} />);
-    const card = screen.getByTestId(`game-card-${mockGame.gameId}`);
-    fireEvent.click(card);
-    expect(mockRouter.push).toHaveBeenCalledWith(`/games/${mockGame.gameId}`);
+  it('displays correct team scores', () => {
+    renderWithRouter(<GameCard game={mockGame} />);
+    expect(screen.getByTestId('home-team-score')).toHaveTextContent('55');
+    expect(screen.getByTestId('away-team-score')).toHaveTextContent('60');
+  });
+
+  it('displays correct team stats', () => {
+    renderWithRouter(<GameCard game={mockGame} />);
+    expect(screen.getByTestId('home-team-rebounds')).toHaveTextContent('20');
+    expect(screen.getByTestId('home-team-assists')).toHaveTextContent('15');
+    expect(screen.getByTestId('home-team-blocks')).toHaveTextContent('3');
+    expect(screen.getByTestId('away-team-rebounds')).toHaveTextContent('22');
+    expect(screen.getByTestId('away-team-assists')).toHaveTextContent('18');
+    expect(screen.getByTestId('away-team-blocks')).toHaveTextContent('2');
   });
 }); 

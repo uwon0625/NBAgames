@@ -3,7 +3,7 @@
 import React, { useContext } from 'react';
 import { Game } from '@/types/Game';
 import { RouterContext } from '@/utils/RouterContext';
-import { formatGameStatus } from '@/utils/formatters';
+import { formatClock } from '@/utils/formatters';
 import { GameStatus } from '@/types/enums';
 
 interface GameCardProps {
@@ -13,21 +13,7 @@ interface GameCardProps {
 export const GameCard: React.FC<GameCardProps> = ({ game }) => {
   const router = useContext(RouterContext);
 
-  const handleClick = () => {
-    try {
-      if (router) {
-        router.push(`/games/${game.gameId}`);
-      } else {
-        window.location.href = `/games/${game.gameId}`;
-      }
-    } catch (error) {
-      console.error('Navigation failed:', error);
-      window.location.href = `/games/${game.gameId}`;
-    }
-  };
-
   const handleBoxScoreClick = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the card click
     if (game.status !== GameStatus.SCHEDULED) {
       const boxScoreUrl = `/games/${game.gameId}/boxscore?status=${game.status}&period=${game.period}&clock=${encodeURIComponent(game.clock)}`;
       try {
@@ -43,24 +29,42 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
     }
   };
 
-  const getGameStatusText = (): string => {
-    return formatGameStatus(game.status, game.period, game.clock);
+  const getGameStatusStyle = () => {
+    switch (game.status) {
+      case GameStatus.LIVE:
+        return 'bg-red-100 text-red-600';
+      case GameStatus.FINAL:
+        return 'bg-gray-100 text-gray-600';
+      default:
+        return 'bg-blue-50 text-blue-600';
+    }
   };
 
-  const getBoxScoreButtonStyle = () => {
-    const isGameStarted = game.status !== GameStatus.SCHEDULED;
-    return `text-xs font-bold ${
-      isGameStarted 
-        ? 'text-blue-600 bg-blue-50 hover:bg-blue-100 cursor-pointer' 
-        : 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-50'
-    } rounded-full px-3 py-1 w-[80px] text-center`;
+  const getGameStatusText = (): { top: string, bottom: string } => {
+    if (game.status === GameStatus.LIVE && game.period) {
+      return {
+        top: `Q${game.period}`,
+        bottom: formatClock(game.clock)
+      };
+    }
+    
+    if (game.status === GameStatus.FINAL) {
+      return {
+        top: 'Final',
+        bottom: ''
+      };
+    }
+
+    return {
+      top: 'Scheduled',
+      bottom: ''
+    };
   };
 
   return (
     <div className="max-w-3xl mx-auto">
       <div 
-        className="bg-gradient-to-br from-white to-gray-50 rounded-lg shadow-md px-6 py-4 cursor-pointer hover:shadow-lg transition-all hover:from-gray-50 hover:to-white"
-        onClick={handleClick}
+        className="bg-gradient-to-br from-white to-gray-50 rounded-lg shadow-md px-6 py-4"
         data-testid={`game-card-${game.gameId}`}
       >
         {/* Stats Header */}
@@ -83,10 +87,13 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
             {/* Status Container */}
             <div className="col-span-2">
               <div 
-                className="text-xs text-gray-600 bg-gray-100 rounded-full px-3 py-1 w-[80px] text-center" 
+                className={`text-xs rounded-full px-3 py-1 w-[80px] text-center ${getGameStatusStyle()}`}
                 data-testid="game-status"
               >
-                {getGameStatusText()}
+                <div className="font-bold">{getGameStatusText().top}</div>
+                {getGameStatusText().bottom && (
+                  <div className="text-xs">{getGameStatusText().bottom}</div>
+                )}
               </div>
             </div>
             
@@ -113,12 +120,17 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
             {/* Box Score Container */}
             <div className="col-span-2">
               <button 
-                className={getBoxScoreButtonStyle()}
+                className={`text-xs font-bold ${
+                  game.status !== GameStatus.SCHEDULED 
+                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100 cursor-pointer' 
+                    : 'text-gray-400 bg-gray-100 cursor-not-allowed opacity-50'
+                } rounded-full px-3 py-1 w-[80px] text-center`}
                 onClick={handleBoxScoreClick}
                 disabled={game.status === GameStatus.SCHEDULED}
                 data-testid="box-score-button"
               >
-                Box Score
+                <div>Box</div>
+                <div>Score</div>
               </button>
             </div>
 

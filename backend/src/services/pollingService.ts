@@ -28,7 +28,7 @@ export class PollingService {
           for (const gameId of changedGameIds) {
             const game = games.find(g => g.gameId === gameId);
             if (game) {
-              await this.gameService.cacheGameScore(gameId, game);
+              await this.gameService.cacheGame(gameId, game);
             }
           }
         }

@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchGame, getBoxScore } from '@/services/api';
 import { PlayerStatsTable } from './PlayerStatsTable';
 import { Game, GameBoxScore } from '@/types/Game';
 import { GameStatus } from '@/types/enums';
 import { formatGameStatus, formatClock } from '@/utils/formatters';
+import { RouterContext } from '@/utils/RouterContext';
 
 interface BoxScoreProps {
   gameId: string | null;
@@ -16,6 +17,8 @@ interface BoxScoreProps {
 }
 
 export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
+  const router = useContext(RouterContext);
+
   const { data: game, isLoading: gameLoading, error: gameError } = 
     useQuery<Game | undefined>({
       queryKey: ['game', gameId],
@@ -33,6 +36,14 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
       retry: 1,
       staleTime: 30000 // Cache for 30 seconds
     });
+
+  const handleBackClick = () => {
+    if (router) {
+      router.push('/');
+    } else {
+      window.location.href = '/';
+    }
+  };
 
   if (!gameId) {
     return <div className="text-center p-4">No game ID provided</div>;
@@ -64,6 +75,29 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Back Button */}
+      <div className="mb-6">
+        <button
+          onClick={handleBackClick}
+          className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium"
+        >
+          <svg 
+            className="w-5 h-5" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              strokeWidth={2} 
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Back to Today's Games
+        </button>
+      </div>
+
       {/* Game Header */}
       <div className="text-center mb-8">
         <div className="text-2xl font-bold mb-2" data-testid="game-header">

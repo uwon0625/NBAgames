@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import gameRoutes from './routes/gameRoutes';
-import { logger } from './config/logger';
+import apiRouter from './routes/api';
 import adminRouter from './routes/admin';
+import { logger } from './config/logger';
 
 const app = express();
 
@@ -20,8 +20,8 @@ app.get('/', (req, res) => {
   res.json({ message: 'NBA Games API' });
 });
 
-// Mount routes with /api prefix
-app.use('/api/games', gameRoutes);
+// Mount routes
+app.use('/api', apiRouter);
 app.use('/api/admin', adminRouter);
 
 // Add 404 handler
