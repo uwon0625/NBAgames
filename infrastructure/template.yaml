@@ -1,29 +1,29 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'NBA Live DynamoDB Table'
+Description: NBA Live Scores application infrastructure
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
 
 Resources:
-  NBAGamesTable:
+  # DynamoDB Tables
+  GamesTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
     Properties:
-      TableName: nba-games
+      TableName: !Sub '${AWS::StackName}-games-${Environment}'
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-        - AttributeName: date
-          AttributeType: S
-        - AttributeName: type
+        - AttributeName: gameId
           AttributeType: S
       KeySchema:
-        - AttributeName: date
+        - AttributeName: gameId
           KeyType: HASH
-        - AttributeName: type
-          KeyType: RANGE
-      BillingMode: PAY_PER_REQUEST
-      TimeToLiveSpecification:
-        AttributeName: ttl
-        Enabled: true
 
 Outputs:
-  TableName:
-    Description: Name of the DynamoDB table
-    Value: 
-      Ref: NBAGamesTable 
+  GamesTableName:
+    Description: Name of the Games DynamoDB table
+    Value: !Ref GamesTable
+    Export:
+      Name: !Sub '${AWS::StackName}-games-table-${Environment}' 
