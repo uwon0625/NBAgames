@@ -1,5 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { GameScore, PlayerStats, TeamBoxScore, GameBoxScore } from '../types';
+import { GameStatus } from '../types/enums';
 
 const MOCK_GAME_ID_PREFIX = '0022400';
 
@@ -42,7 +43,7 @@ const generateTeamStats = () => ({
   blocks: faker.number.int({ min: 2, max: 12 }),
 });
 
-const generateGameScore = (gameId: string, status: 'scheduled' | 'live' | 'final'): GameScore => {
+const generateGameScore = (gameId: string, status: GameStatus): GameScore => {
   const teams = faker.helpers.shuffle([...NBA_TEAMS]);
   const homeTeam = teams[0];
   const awayTeam = teams[1];
@@ -50,11 +51,11 @@ const generateGameScore = (gameId: string, status: 'scheduled' | 'live' | 'final
   const baseGame = {
     gameId,
     status,
-    period: status === 'scheduled' ? 0 : faker.number.int({ min: 1, max: 4 }),
-    clock: status === 'scheduled' ? '' : `${faker.number.int({ min: 0, max: 11 })}:${faker.number.int({ min: 0, max: 59 }).toString().padStart(2, '0')}`,
+    period: status === GameStatus.SCHEDULED ? 0 : faker.number.int({ min: 1, max: 4 }),
+    clock: status === GameStatus.SCHEDULED ? '' : `${faker.number.int({ min: 0, max: 11 })}:${faker.number.int({ min: 0, max: 59 }).toString().padStart(2, '0')}`,
   };
 
-  if (status === 'scheduled') {
+  if (status === GameStatus.SCHEDULED) {
     return {
       ...baseGame,
       homeTeam: {
@@ -157,7 +158,11 @@ export const generateBoxScore = (gameScore: GameScore): GameBoxScore => {
 export const generateGames = (count: number = 6): GameScore[] => {
   return Array.from({ length: count }, (_, index) => {
     const gameId = `${MOCK_GAME_ID_PREFIX}${(index + 1).toString().padStart(3, '0')}`;
-    const status = faker.helpers.arrayElement(['scheduled', 'live', 'final'] as const);
+    const status = faker.helpers.arrayElement([
+      GameStatus.SCHEDULED,
+      GameStatus.LIVE,
+      GameStatus.FINAL
+    ]);
     return generateGameScore(gameId, status);
   });
 }; 

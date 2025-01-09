@@ -10,7 +10,7 @@ export class CacheService {
     const key = `game:${gameId}`;
     await redisClient.setex(
       key,
-      GAME_CACHE_TTL,
+      parseInt(process.env.REDIS_CACHE_TTL || '300'),
       JSON.stringify(gameData)
     );
   }

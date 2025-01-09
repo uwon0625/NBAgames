@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { logger } from '../config/logger';
-import { GameScore, GameBoxScore, NBAGame } from '../types';
+import { GameScore, GameBoxScore, NBAGame, Team, TeamBoxScore } from '../types';
 import { mockScoreboard, mockBoxScore } from './mockData';
 import dotenv from 'dotenv';
+import { GameStatus } from '../types/enums';
 dotenv.config();
 
 // Configuration constants
@@ -20,6 +21,92 @@ const axiosConfig = {
   }
 };
 
+function transformTeamStats(team: any) {
+  // Use the full statistics object if available, otherwise use basic stats
+  const stats = team.statistics || {};
+  
+  return {
+    rebounds: parseInt(String(stats.reboundsTotal || '0')),
+    assists: parseInt(String(stats.assists || '0')),
+    blocks: parseInt(String(stats.blocks || '0'))
+  };
+}
+
+function transformTeam(team: any): Team {
+  // For game cards, we need to use the full statistics
+  const stats = transformTeamStats(team);
+  
+  return {
+    teamId: team.teamId.toString(),
+    teamTricode: team.teamTricode,
+    score: parseInt(String(team.score || '0')),
+    stats: {
+      rebounds: stats.rebounds,
+      assists: stats.assists,
+      blocks: stats.blocks
+    }
+  };
+}
+
+function transformPlayerStats(player: any) {
+  return {
+    playerId: player.personId,
+    name: player.name,
+    position: player.position || '',
+    minutes: player.statistics?.minutesCalculated || '0:00',
+    points: parseInt(String(player.statistics?.points || '0')),
+    rebounds: parseInt(String(player.statistics?.reboundsTotal || '0')),
+    assists: parseInt(String(player.statistics?.assists || '0')),
+    steals: parseInt(String(player.statistics?.steals || '0')),
+    blocks: parseInt(String(player.statistics?.blocks || '0')),
+    personalFouls: parseInt(String(player.statistics?.foulsPersonal || '0')),
+    fgm: parseInt(String(player.statistics?.fieldGoalsMade || '0')),
+    fga: parseInt(String(player.statistics?.fieldGoalsAttempted || '0')),
+    threePm: parseInt(String(player.statistics?.threePointersMade || '0')),
+    threePa: parseInt(String(player.statistics?.threePointersAttempted || '0')),
+    ftm: parseInt(String(player.statistics?.freeThrowsMade || '0')),
+    fta: parseInt(String(player.statistics?.freeThrowsAttempted || '0')),
+    plusMinus: parseInt(String(player.statistics?.plusMinusPoints || '0'))
+  };
+}
+
+function transformBoxScoreTeam(team: any): TeamBoxScore {
+  const baseTeam = transformTeam(team);
+  
+  // Transform players
+  const players = (team.players || []).map(transformPlayerStats);
+
+  return {
+    ...baseTeam,
+    players,
+    totals: {
+      points: parseInt(String(team.score || '0')),
+      rebounds: parseInt(String(team.statistics?.reboundsTotal || '0')),
+      assists: parseInt(String(team.statistics?.assists || '0')),
+      steals: parseInt(String(team.statistics?.steals || '0')),
+      blocks: parseInt(String(team.statistics?.blocks || '0')),
+      personalFouls: parseInt(String(team.statistics?.foulsPersonal || '0')),
+      fgm: parseInt(String(team.statistics?.fieldGoalsMade || '0')),
+      fga: parseInt(String(team.statistics?.fieldGoalsAttempted || '0')),
+      threePm: parseInt(String(team.statistics?.threePointersMade || '0')),
+      threePa: parseInt(String(team.statistics?.threePointersAttempted || '0')),
+      ftm: parseInt(String(team.statistics?.freeThrowsMade || '0')),
+      fta: parseInt(String(team.statistics?.freeThrowsAttempted || '0'))
+    }
+  };
+}
+
+function getGameStatus(gameStatus: number): GameStatus {
+  switch (gameStatus) {
+    case 2:
+      return GameStatus.LIVE;
+    case 3:
+      return GameStatus.FINAL;
+    default:
+      return GameStatus.SCHEDULED;
+  }
+}
+
 export async function fetchNBAScoreboard() {
   try {
     if (USE_MOCK_DATA) {
@@ -27,6 +114,7 @@ export async function fetchNBAScoreboard() {
       return mockScoreboard.scoreboard;
     }
 
+    console.log('Fetching NBA scoreboard from:', NBA_API_URL);
     const response = await axios.get(NBA_API_URL, axiosConfig);
     return response.data.scoreboard;
   } catch (error) {
@@ -51,93 +139,64 @@ export async function fetchNBABoxScore(gameId: string) {
 }
 
 export async function transformNBAGame(nbaGame: NBAGame): Promise<GameScore> {
-  const transformTeam = (team: any) => ({
-    teamId: team.teamId.toString(),
-    teamTricode: team.teamTricode,
-    score: team.score || 0,
-    stats: {
-      rebounds: parseInt(team.statistics?.reboundsDefensive || '0') + 
-                parseInt(team.statistics?.reboundsOffensive || '0'),
-      assists: parseInt(team.statistics?.assists || '0'),
-      blocks: parseInt(team.statistics?.blocks || '0')
-    }
-  });
+  try {
+    // Fetch box score data to get detailed statistics
+    const boxScore = await fetchNBABoxScore(nbaGame.gameId);
+    
+    // Use box score stats if available, otherwise use basic game stats
+    const homeTeamStats = boxScore?.homeTeam?.statistics || {};
+    const awayTeamStats = boxScore?.awayTeam?.statistics || {};
 
-  return {
-    gameId: nbaGame.gameId,
-    status: nbaGame.gameStatus === 2 ? 'live' : 
-            nbaGame.gameStatus === 3 ? 'final' : 
-            'scheduled',
-    period: nbaGame.period || 0,
-    clock: nbaGame.gameClock || '',
-    homeTeam: transformTeam(nbaGame.homeTeam),
-    awayTeam: transformTeam(nbaGame.awayTeam),
-    lastUpdate: Date.now()
-  };
+    return {
+      gameId: nbaGame.gameId,
+      status: getGameStatus(nbaGame.gameStatus),
+      period: nbaGame.period || 0,
+      clock: nbaGame.gameClock || '',
+      homeTeam: {
+        teamId: nbaGame.homeTeam.teamId.toString(),
+        teamTricode: nbaGame.homeTeam.teamTricode,
+        score: parseInt(String(nbaGame.homeTeam.score || '0')),
+        stats: {
+          rebounds: parseInt(String(homeTeamStats.reboundsTotal || '0')),
+          assists: parseInt(String(homeTeamStats.assists || '0')),
+          blocks: parseInt(String(homeTeamStats.blocks || '0'))
+        }
+      },
+      awayTeam: {
+        teamId: nbaGame.awayTeam.teamId.toString(),
+        teamTricode: nbaGame.awayTeam.teamTricode,
+        score: parseInt(String(nbaGame.awayTeam.score || '0')),
+        stats: {
+          rebounds: parseInt(String(awayTeamStats.reboundsTotal || '0')),
+          assists: parseInt(String(awayTeamStats.assists || '0')),
+          blocks: parseInt(String(awayTeamStats.blocks || '0'))
+        }
+      },
+      lastUpdate: Date.now()
+    };
+  } catch (error) {
+    logger.error(`Error transforming game ${nbaGame.gameId}:`, error);
+    // Return basic game data without statistics if box score fetch fails
+    return {
+      gameId: nbaGame.gameId,
+      status: getGameStatus(nbaGame.gameStatus),
+      period: nbaGame.period || 0,
+      clock: nbaGame.gameClock || '',
+      homeTeam: transformTeam(nbaGame.homeTeam),
+      awayTeam: transformTeam(nbaGame.awayTeam),
+      lastUpdate: Date.now()
+    };
+  }
 }
 
 export function transformNBABoxScore(nbaBoxScore: any): GameBoxScore {
-  const transformTeam = (team: any) => {
-    const stats = {
-      rebounds: parseInt(team.statistics?.reboundsDefensive || '0') + 
-                parseInt(team.statistics?.reboundsOffensive || '0'),
-      assists: parseInt(team.statistics?.assists || '0'),
-      blocks: parseInt(team.statistics?.blocks || '0')
-    };
-
-    // Transform players with proper minutes format
-    const players = (team.players || []).map((player: any) => {
-      // Convert PT format to MM:SS
-      const minutesStr = player.statistics?.minutesCalculated || '';
-      let minutes = '0:00';
-      if (minutesStr.startsWith('PT')) {
-        const matches = minutesStr.match(/PT(\d+)M(?:(\d+(?:\.\d+)?)S)?/);
-        if (matches) {
-          const mins = matches[1];
-          const secs = matches[2] ? Math.floor(parseFloat(matches[2])) : 0;
-          minutes = `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
-      }
-
-      return {
-        ...player,
-        statistics: {
-          ...player.statistics,
-          minutesCalculated: minutes
-        }
-      };
-    });
-
-    return {
-      teamId: team.teamId,
-      teamTricode: team.teamTricode,
-      score: team.score,
-      players,
-      stats,
-      totals: {
-        points: team.score,
-        rebounds: stats.rebounds,
-        assists: stats.assists,
-        steals: parseInt(team.statistics?.steals || '0'),
-        blocks: stats.blocks,
-        personalFouls: parseInt(team.statistics?.foulsPersonal || '0'),
-        fgm: parseInt(team.statistics?.fieldGoalsMade || '0'),
-        fga: parseInt(team.statistics?.fieldGoalsAttempted || '0'),
-        threePm: parseInt(team.statistics?.threePointersMade || '0'),
-        threePa: parseInt(team.statistics?.threePointersAttempted || '0'),
-        ftm: parseInt(team.statistics?.freeThrowsMade || '0'),
-        fta: parseInt(team.statistics?.freeThrowsAttempted || '0')
-      }
-    };
-  };
-
   return {
     gameId: nbaBoxScore.gameId,
-    status: 'scheduled',
+    status: GameStatus.SCHEDULED,
     period: nbaBoxScore.period,
     clock: nbaBoxScore.gameClock || '',
-    homeTeam: transformTeam(nbaBoxScore.homeTeam),
-    awayTeam: transformTeam(nbaBoxScore.awayTeam),
+    homeTeam: transformBoxScoreTeam(nbaBoxScore.homeTeam),
+    awayTeam: transformBoxScoreTeam(nbaBoxScore.awayTeam),
     arena: nbaBoxScore.arena?.arenaName || '',
     attendance: nbaBoxScore.attendance || 0,
     lastUpdate: Date.now()

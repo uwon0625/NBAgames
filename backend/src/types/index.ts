@@ -1,3 +1,5 @@
+import { GameStatus } from './enums';
+
 export interface Team {
   teamId: string;
   teamTricode: string;
@@ -11,7 +13,7 @@ export interface Team {
 
 export interface GameScore {
   gameId: string;
-  status: 'scheduled' | 'live' | 'final';
+  status: GameStatus;
   period: number;
   clock: string;
   homeTeam: Team;

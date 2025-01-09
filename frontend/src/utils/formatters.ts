@@ -26,20 +26,21 @@ export const formatClock = (clock: string | undefined): string => {
   return clock;
 };
 
-export const formatGameStatus = (status: GameStatus, period?: number, clock?: string): string => {
-  if (status === GameStatus.LIVE && period) {
-    if (period > 4) {
-      return `OT ${formatClock(clock)}`;
+export function formatGameStatus(status: GameStatus, period: number, clock: string): string {
+  if (status === GameStatus.LIVE) {
+    // Show "Half" for second quarter ending
+    if (period === 2 && clock === '0:00') {
+      return 'Half';
     }
-    return `Q${period} ${formatClock(clock)}`;
+    return `Q${period} ${clock}`;
   }
-
+  
   if (status === GameStatus.FINAL) {
     return 'Final';
   }
-
+  
   return 'Scheduled';
-};
+}
 
 export const formatPlayTime = (minutes: string | undefined): string => {
   // Handle undefined or null

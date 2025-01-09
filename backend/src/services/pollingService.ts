@@ -1,53 +1,69 @@
 import { GameService } from './gameService';
 import { WebSocketService } from './websocketService';
+import { handleGameUpdate } from '../lambdas/gameUpdateHandler';
 import { logger } from '../config/logger';
 
 export class PollingService {
   private gameService: GameService;
   private wsService: WebSocketService;
-  private pollInterval: NodeJS.Timeout | null = null;
+  private pollTimeout: NodeJS.Timeout | null = null;
+  private isPolling: boolean = false;
 
   constructor() {
     this.gameService = new GameService();
     this.wsService = new WebSocketService();
   }
 
-  async startPolling() {
-    // SCOREBOARD_TTL is in milliseconds (e.g., 120000 for 2 minutes)
-    const interval = parseInt(process.env.SCOREBOARD_TTL || '120000');
-    
-    const poll = async () => {
-      try {
-        const { games, changedGameIds } = await this.gameService.getGames();
-        
-        // Only broadcast if there are changes
-        if (changedGameIds.length > 0) {
-          this.wsService.broadcastGameUpdates(games, changedGameIds);
-          
-          // Update Redis cache only for changed games
-          for (const gameId of changedGameIds) {
-            const game = games.find(g => g.gameId === gameId);
-            if (game) {
-              await this.gameService.cacheGame(gameId, game);
-            }
-          }
-        }
-      } catch (error) {
-        logger.error('Polling error:', error);
-      }
-    };
+  private async doPoll() {
+    try {
+      const { games, changedGameIds } = await this.gameService.getGames();
+      
+      if (changedGameIds.length > 0) {
+        // Process updates through lambda handler
+        await Promise.all(
+          games
+            .filter(game => changedGameIds.includes(game.gameId))
+            .map(handleGameUpdate)
+        );
 
-    // Initial poll
-    await poll();
+        // Broadcast to WebSocket clients
+        this.wsService.broadcastGameUpdates(games, changedGameIds);
+      }
+    } catch (error) {
+      logger.error('Polling error:', error);
+    }
+  }
+
+  private scheduleNextPoll() {
+    if (!this.isPolling) return;
+
+    const interval = parseInt(process.env.SCOREBOARD_TTL || '120000');
+    this.pollTimeout = setTimeout(async () => {
+      await this.doPoll();
+      this.scheduleNextPoll();
+    }, interval);
+  }
+
+  async startPolling() {
+    if (this.isPolling) return;
     
-    // Set up interval
-    this.pollInterval = setInterval(poll, interval);
+    this.isPolling = true;
+    logger.info('Starting polling service...');
+    
+    // Do initial poll
+    await this.doPoll();
+    
+    // Schedule next poll
+    this.scheduleNextPoll();
   }
 
   stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
+    logger.info('Stopping polling service...');
+    this.isPolling = false;
+    
+    if (this.pollTimeout) {
+      clearTimeout(this.pollTimeout);
+      this.pollTimeout = null;
     }
   }
 } 
