@@ -5,7 +5,8 @@
   "license": "MIT",
   "scripts": {
     "setup": "ts-node setup.ts",
-    "test-permissions": "ts-node test-permissions.ts"
+    "test-permissions": "ts-node test-permissions.ts",
+    "cleanup": "ts-node cleanup.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.716.0",

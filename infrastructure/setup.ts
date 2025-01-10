@@ -1,35 +1,9 @@
+import { executeCommand, CommandError } from './utils/aws-commands';
 import { logger } from '../backend/src/config/logger';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 dotenv.config();
-
-const execAsync = promisify(exec);
-
-interface CommandError extends Error {
-  stderr?: string;
-  stdout?: string;
-  cmd?: string;
-}
-
-async function executeCommand(command: string): Promise<string> {
-  try {
-    logger.info(`Executing command: ${command}`);
-    const { stdout, stderr } = await execAsync(command);
-    if (stderr) {
-      logger.warn('Command stderr:', stderr);
-    }
-    return stdout.trim();
-  } catch (error: any) {
-    logger.error('Command execution failed:', error.message);
-    if (error.stderr) {
-      logger.error('Command stderr:', error.stderr);
-    }
-    throw error;
-  }
-}
 
 async function ensureDirectoryExists(dirPath: string): Promise<void> {
   if (!fs.existsSync(dirPath)) {

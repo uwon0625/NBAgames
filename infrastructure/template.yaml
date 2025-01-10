@@ -8,7 +8,64 @@ Parameters:
     AllowedValues: [dev, staging, prod]
 
 Resources:
-  # DynamoDB Tables
+  # MSK Cluster
+  MSKCluster:
+    Type: AWS::MSK::Cluster
+    Properties:
+      ClusterName: !Sub '${AWS::StackName}-kafka-${Environment}'
+      KafkaVersion: '2.8.1'
+      NumberOfBrokerNodes: 2
+      BrokerNodeGroupInfo:
+        InstanceType: kafka.t3.small
+        ClientSubnets: 
+          - !Ref PublicSubnet1
+          - !Ref PublicSubnet2
+        SecurityGroups: 
+          - !Ref MSKSecurityGroup
+      EncryptionInfo:
+        EncryptionInTransit:
+          ClientBroker: TLS
+          InCluster: true
+
+  # VPC for MSK
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpc-${Environment}'
+
+  # Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.2.0/24'
+      AvailabilityZone: !Select [1, !GetAZs '']
+
+  # Security Group for MSK
+  MSKSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for MSK cluster
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 9092
+          ToPort: 9092
+          CidrIp: '0.0.0.0/0'
+
+  # DynamoDB Table (existing)
   GamesTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -17,13 +74,150 @@ Resources:
       AttributeDefinitions:
         - AttributeName: gameId
           AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: lastUpdated
+          AttributeType: N
       KeySchema:
         - AttributeName: gameId
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StatusLastUpdatedIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: lastUpdated
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # Redis (ElastiCache) for caching
+  RedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheNodeType: cache.t3.micro
+      Engine: redis
+      NumCacheNodes: 1
+      VpcSecurityGroupIds: 
+        - !Ref RedisSecurityGroup
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Redis cluster
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: '0.0.0.0/0'
+
+  # Lambda Functions
+  KafkaConsumerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-kafka-consumer-${Environment}'
+      Runtime: nodejs18.x
+      Handler: kafkaConsumer.handler
+      Code:
+        S3Bucket: !Ref S3_BUCKET_NAME
+        S3Key: lambda/kafkaConsumer.zip
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref GamesTable
+          REDIS_ENDPOINT: !GetAtt RedisCluster.RedisEndpoint.Address
+          KAFKA_BROKERS: !GetAtt MSKCluster.BootstrapBrokers
+          ENVIRONMENT: !Ref Environment
+      Timeout: 30
+      MemorySize: 256
+      Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds: 
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PublicSubnet1
+          - !Ref PublicSubnet2
+
+  GameUpdateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-game-update-${Environment}'
+      Runtime: nodejs18.x
+      Handler: gameUpdateHandler.handleGameUpdate
+      Code:
+        S3Bucket: !Ref S3_BUCKET_NAME
+        S3Key: lambda/gameUpdateHandler.zip
+      Environment:
+        Variables:
+          KAFKA_BROKERS: !GetAtt MSKCluster.BootstrapBrokers
+          ENVIRONMENT: !Ref Environment
+      Timeout: 30
+      MemorySize: 256
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+  # Lambda Security Group
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions
+      VpcId: !Ref VPC
+
+  # EventBridge Rules
+  GamePollingRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-game-polling-${Environment}'
+      Description: 'Poll for NBA game updates every minute'
+      ScheduleExpression: 'rate(1 minute)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt GameUpdateFunction.Arn
+          Id: 'GameUpdateFunction'
+
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource: !GetAtt GamesTable.Arn
+
+  # EventBridge Permission
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GameUpdateFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GamePollingRule.Arn
 
 Outputs:
+  KafkaBrokers:
+    Description: Kafka broker endpoints
+    Value: !GetAtt MSKCluster.BootstrapBrokers
+  RedisEndpoint:
+    Description: Redis endpoint
+    Value: !GetAtt RedisCluster.RedisEndpoint.Address
   GamesTableName:
-    Description: Name of the Games DynamoDB table
+    Description: DynamoDB table name
     Value: !Ref GamesTable
     Export:
       Name: !Sub '${AWS::StackName}-games-table-${Environment}' 

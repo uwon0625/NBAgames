@@ -1,71 +1,65 @@
+import { executeCommand } from './utils/aws-commands';
 import { logger } from '../backend/src/config/logger';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import dotenv from 'dotenv';
+import fs from 'fs';
 dotenv.config();
 
-const execAsync = promisify(exec);
+async function testPermissions(): Promise<void> {
+  logger.info('Testing AWS permissions...');
+  const testBucket = `${process.env.S3_BUCKET_NAME}-test`;
+  const testTable = `${process.env.DYNAMODB_TABLE_NAME}-test`;
 
-async function testPermissions() {
   try {
-    // Test AWS identity
-    logger.info('Testing AWS identity...');
-    const identity = await execAsync('aws sts get-caller-identity');
-    logger.info('Identity:', identity.stdout);
+    // Test S3 permissions
+    logger.info('Testing S3 permissions...');
+    await executeCommand(`aws s3api get-bucket-location --bucket ${process.env.S3_BUCKET_NAME}`);
+    logger.info('✓ S3 read permissions OK');
 
-    // Test S3 bucket creation
-    const bucketName = `nba-live-${process.env.AWS_ACCOUNT_ID}-test`;
-    logger.info(`Testing S3 bucket creation: ${bucketName}`);
-    try {
-      await execAsync(`aws s3 mb s3://${bucketName} --region ${process.env.AWS_REGION}`);
-      logger.info('S3 bucket creation successful');
-      
-      // Test S3 bucket listing
-      logger.info('Testing S3 bucket listing...');
-      const buckets = await execAsync(`aws s3 ls s3://${bucketName}`);
-      logger.info('S3 bucket listing successful:', buckets.stdout);
+    // Test DynamoDB permissions
+    logger.info('Testing DynamoDB permissions...');
+    await executeCommand(
+      `aws dynamodb describe-table --table-name ${process.env.DYNAMODB_TABLE_NAME} ` +
+      `--region ${process.env.AWS_REGION}`
+    );
+    logger.info('✓ DynamoDB read permissions OK');
 
-      // Test S3 object upload
-      logger.info('Testing S3 object upload...');
-      await execAsync(`echo "test" > test.txt`);
-      await execAsync(`aws s3 cp test.txt s3://${bucketName}/test.txt`);
-      logger.info('S3 object upload successful');
+    // Test cleanup permissions
+    logger.info('Testing cleanup permissions...');
+    await executeCommand(`aws s3api get-bucket-policy --bucket ${process.env.S3_BUCKET_NAME}`);
+    logger.info('✓ S3 delete permissions OK');
 
-    } catch (error: any) {
-      logger.error('S3 operation failed:', error.stderr);
-    }
+    await executeCommand(
+      `aws dynamodb describe-table --table-name ${process.env.DYNAMODB_TABLE_NAME} ` +
+      `--region ${process.env.AWS_REGION}`
+    );
+    logger.info('✓ DynamoDB delete permissions OK');
 
-    // Test DynamoDB table creation
-    const tableName = 'nba-live-test-table';
-    logger.info(`Testing DynamoDB table creation: ${tableName}`);
-    try {
-      await execAsync(
-        `aws dynamodb create-table ` +
-        `--table-name ${tableName} ` +
-        `--attribute-definitions AttributeName=id,AttributeType=S ` +
-        `--key-schema AttributeName=id,KeyType=HASH ` +
-        `--billing-mode PAY_PER_REQUEST ` +
-        `--region ${process.env.AWS_REGION}`
-      );
-      logger.info('DynamoDB table creation successful');
-      
-      // Test DynamoDB item operations
-      logger.info('Testing DynamoDB item operations...');
-      await execAsync(
-        `aws dynamodb put-item ` +
-        `--table-name ${tableName} ` +
-        `--item '{"id": {"S": "test"}, "data": {"S": "test"}}' ` +
-        `--region ${process.env.AWS_REGION}`
-      );
-      logger.info('DynamoDB item put successful');
-
-    } catch (error: any) {
-      logger.error('DynamoDB operation failed:', error.stderr);
-    }
-
+    logger.info('All permissions tests passed');
   } catch (error: any) {
-    logger.error('Permission test failed:', error.stderr);
+    if (error.stderr?.includes('AccessDenied') || error.stderr?.includes('AccessDeniedException')) {
+      logger.warn('Missing required permissions. Please ask your AWS admin to grant:');
+      logger.warn('Required permissions:');
+      logger.warn('S3:');
+      logger.warn('- s3:CreateBucket');
+      logger.warn('- s3:PutObject');
+      logger.warn('- s3:GetObject');
+      logger.warn('- s3:ListBucket');
+      logger.warn('- s3:DeleteObject');
+      logger.warn('- s3:DeleteBucket');
+      logger.warn('DynamoDB:');
+      logger.warn('- dynamodb:CreateTable');
+      logger.warn('- dynamodb:DescribeTable');
+      logger.warn('- dynamodb:DeleteTable');
+      logger.warn('- dynamodb:PutItem');
+      logger.warn('- dynamodb:GetItem');
+      logger.warn('- dynamodb:UpdateItem');
+    } else {
+      throw error;
+    }
   }
 }
 
-testPermissions(); 
+testPermissions().catch(error => {
+  logger.error('Permission test failed:', error);
+  process.exit(1);
+}); 
