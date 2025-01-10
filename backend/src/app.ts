@@ -3,6 +3,25 @@ import cors from 'cors';
 import apiRouter from './routes/api';
 import adminRouter from './routes/admin';
 import { logger } from './config/logger';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
+
+// Validate required environment variables
+const requiredEnvVars = [
+  'AWS_REGION',
+  'DYNAMODB_TABLE_NAME',
+  'S3_BUCKET_NAME',
+  'NBA_BASE_URL'
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    logger.error(`Missing required environment variable: ${envVar}`);
+    process.exit(1);
+  }
+}
 
 const app = express();
 
@@ -17,7 +36,11 @@ app.use(express.json());
 
 // Add root route for testing
 app.get('/', (req, res) => {
-  res.json({ message: 'NBA Games API' });
+  res.json({ 
+    message: 'NBA Games API',
+    version: '1.0.0',
+    env: process.env.NODE_ENV
+  });
 });
 
 // Mount routes

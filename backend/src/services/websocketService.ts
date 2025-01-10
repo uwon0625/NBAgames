@@ -1,100 +1,67 @@
-import { WebSocket } from 'ws';
-import { GameAlert, GameScore } from '../types';
+import WebSocket from 'ws';
+import { Server } from 'http';
 import { logger } from '../config/logger';
+import { GameScore } from '../types';
 
 export class WebSocketService {
-  private clients = new Set<WebSocket>();
-  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private wss: WebSocket.Server | null = null;
+  private clients: Set<WebSocket> = new Set();
 
-  constructor() {
-    this.startHeartbeat();
-  }
+  initialize(server: Server) {
+    if (this.wss) {
+      logger.warn('WebSocket server already initialized');
+      return;
+    }
 
-  private startHeartbeat() {
-    const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+    this.wss = new WebSocket.Server({ server });
 
-    this.heartbeatInterval = setInterval(() => {
-      const now = Date.now();
-      this.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          try {
-            client.ping();
-          } catch (error) {
-            logger.error('Error sending ping:', error);
-            this.removeClient(client);
-          }
-        } else {
-          this.removeClient(client);
-        }
+    this.wss.on('connection', (ws: WebSocket) => {
+      logger.info('Client connected');
+      this.clients.add(ws);
+
+      ws.on('close', () => {
+        logger.info('Client disconnected');
+        this.clients.delete(ws);
       });
-    }, HEARTBEAT_INTERVAL);
-  }
 
-  private removeClient(client: WebSocket) {
-    client.terminate();
-    this.clients.delete(client);
-    logger.info(`Client disconnected. Active connections: ${this.clients.size}`);
-  }
-
-  public addClient(client: WebSocket) {
-    this.clients.add(client);
-    logger.info(`New client connected. Active connections: ${this.clients.size}`);
-
-    client.on('close', () => {
-      this.removeClient(client);
+      ws.on('error', (error) => {
+        logger.error('WebSocket error:', error);
+        this.clients.delete(ws);
+      });
     });
 
-    client.on('error', (error) => {
-      logger.error('WebSocket client error:', error);
-      this.removeClient(client);
-    });
-
-    client.on('pong', () => {
-      // Reset client's timeout on pong response
-      if (client.readyState === WebSocket.OPEN) {
-        client.ping();
-      }
-    });
+    logger.info('WebSocket server initialized');
   }
 
-  public broadcastGameUpdates(games: GameScore[], changedGameIds: string[]) {
-    if (this.clients.size === 0 || changedGameIds.length === 0) return;
+  broadcastGameUpdate(game: GameScore) {
+    if (!this.wss) {
+      logger.warn('Attempting to broadcast before WebSocket server initialization');
+      return;
+    }
 
     const message = JSON.stringify({
-      type: 'GAME_UPDATES',
-      data: games.filter(game => changedGameIds.includes(game.gameId)),
-      timestamp: Date.now()
+      type: 'gameUpdate',
+      data: game
     });
 
-    this.broadcast(message);
-  }
-
-  private broadcast(message: string) {
     this.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         try {
           client.send(message);
         } catch (error) {
-          logger.error('Error broadcasting message:', error);
-          this.removeClient(client);
+          logger.error('Error sending message to client:', error);
+          this.clients.delete(client);
         }
       }
     });
   }
 
-  public cleanup() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
+  cleanup() {
+    if (this.wss) {
+      this.wss.close();
+      this.wss = null;
+      this.clients.clear();
+      logger.info('WebSocket server closed');
     }
-
-    this.clients.forEach(client => {
-      try {
-        client.terminate();
-      } catch (error) {
-        logger.error('Error terminating client:', error);
-      }
-    });
-    this.clients.clear();
   }
 } 

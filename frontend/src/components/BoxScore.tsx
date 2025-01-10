@@ -12,7 +12,7 @@ import { RouterContext } from '@/utils/RouterContext';
 interface BoxScoreProps {
   gameId: string | null;
   status?: string | null;
-  period?: number;
+  period?: string | number | null;
   clock?: string;
 }
 
@@ -25,7 +25,7 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
       queryFn: () => fetchGame(gameId),
       enabled: !!gameId,
       retry: 1,
-      staleTime: 30000 // Cache for 30 seconds
+      staleTime: 30000
     });
 
   const { data: boxScore, isLoading: boxScoreLoading, error: boxScoreError } = 
@@ -34,7 +34,7 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
       queryFn: () => getBoxScore(gameId!, game!),
       enabled: !!gameId && !!game,
       retry: 1,
-      staleTime: 30000 // Cache for 30 seconds
+      staleTime: 30000
     });
 
   const handleBackClick = () => {
@@ -50,28 +50,24 @@ export function BoxScore({ gameId, status, period, clock }: BoxScoreProps) {
   }
 
   if (gameLoading || boxScoreLoading) {
+    return <div className="text-center p-4">Loading...</div>;
+  }
+
+  if (gameError || boxScoreError || !boxScore) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-gray-500">Loading box score...</div>
+      <div className="text-center p-4 text-red-600">
+        Error loading box score
       </div>
     );
   }
 
-  if (gameError || boxScoreError) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-red-500">
-          {gameError ? 'Error loading game data' : 'Error loading box score'}
-        </div>
-      </div>
-    );
-  }
+  const periodNumber = period ? parseInt(period.toString()) : undefined;
 
-  if (!game || !boxScore) {
-    return <div className="text-center p-4">No box score available</div>;
-  }
-
-  const gameStatus = formatGameStatus(status as GameStatus, period, clock);
+  const gameStatus = formatGameStatus(
+    (status as GameStatus) || boxScore.status,
+    periodNumber || boxScore.period,
+    clock || boxScore.clock
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">

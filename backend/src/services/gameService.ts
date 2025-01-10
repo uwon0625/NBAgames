@@ -1,296 +1,155 @@
-import axios from 'axios';
-import { GameScore, TeamBoxScore, GameBoxScore, PlayerStats } from '../types';
-import { generateGames } from '../testData/generateGames';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import Redis from 'ioredis';
 import { logger } from '../config/logger';
+import { GameScore, GameBoxScore } from '../types';
 
 export class GameService {
-  private readonly NBA_API_URL = process.env.NBA_API_URL || '';
-  private readonly NBA_BASE_URL = process.env.NBA_BASE_URL || '';
-  private lastGameData: Map<string, GameScore> = new Map();
+  private ddbClient: DynamoDBClient;
+  private docClient: DynamoDBDocumentClient;
+  private redis: Redis;
+  private tableName: string;
 
-  private logApiRequest(endpoint: string, url: string) {
-    console.log(`=== NBA API REQUEST [${endpoint}] ===`);
-    console.log('URL:', url);
-    console.log('BASE_URL:', this.NBA_BASE_URL);
-    console.log('API_URL:', this.NBA_API_URL);
-    console.log('========================');
+  constructor() {
+    this.ddbClient = new DynamoDBClient({});
+    this.docClient = DynamoDBDocumentClient.from(this.ddbClient);
+    this.redis = new Redis(process.env.REDIS_ENDPOINT || '');
+    this.tableName = process.env.DYNAMODB_TABLE_NAME || '';
   }
 
-  private transformNBAData(nbaData: any): GameScore[] {
+  async getGame(gameId: string): Promise<GameBoxScore | null> {
     try {
-      return nbaData.scoreboard.games.map((game: any) => {
-        const homeTeam: TeamBoxScore = {
-          teamId: game.homeTeam.teamId,
-          teamTricode: game.homeTeam.teamTricode,
-          score: parseInt(game.homeTeam.score || '0'),
-          stats: {
-            rebounds: 0,
-            assists: 0,
-            blocks: 0
-          },
-          players: [],
-          totals: {
-            points: parseInt(game.homeTeam.score || '0'),
-            rebounds: 0,
-            assists: 0,
-            steals: 0,
-            blocks: 0,
-            personalFouls: 0,
-            fgm: 0,
-            fga: 0,
-            threePm: 0,
-            threePa: 0,
-            ftm: 0,
-            fta: 0
-          }
-        };
-
-        const awayTeam: TeamBoxScore = {
-          teamId: game.awayTeam.teamId,
-          teamTricode: game.awayTeam.teamTricode,
-          score: parseInt(game.awayTeam.score || '0'),
-          stats: {
-            rebounds: 0,
-            assists: 0,
-            blocks: 0
-          },
-          players: [],
-          totals: {
-            points: parseInt(game.awayTeam.score || '0'),
-            rebounds: 0,
-            assists: 0,
-            steals: 0,
-            blocks: 0,
-            personalFouls: 0,
-            fgm: 0,
-            fga: 0,
-            threePm: 0,
-            threePa: 0,
-            ftm: 0,
-            fta: 0
-          }
-        };
-
-        return {
-          gameId: game.gameId,
-          status: game.gameStatus || 1,
-          period: game.period || 1,
-          clock: '',
-          homeTeam,
-          awayTeam,
-          arena: '',
-          attendance: 0
-        };
-      });
-    } catch (error) {
-      logger.error('Error transforming NBA data:', error);
-      throw error;
-    }
-  }
-
-  async getGames(): Promise<{ games: GameScore[], changedGameIds: string[] }> {
-    try {
-      let games: GameScore[];
-      
-      if (process.env.USE_MOCK_DATA === 'true') {
-        games = generateGames();
-      } else {
-        this.logApiRequest('SCOREBOARD', this.NBA_API_URL);
-        const response = await axios.get(this.NBA_API_URL);
-        
-        console.log('Games count:', response.data.scoreboard.games.length);
-        console.log('First game ID:', response.data.scoreboard.games[0]?.gameId);
-        
-        games = this.transformNBAData(response.data);
+      // Try Redis first for box score
+      const cachedBoxScore = await this.redis.get(`boxscore:${gameId}`);
+      if (cachedBoxScore) {
+        logger.debug(`Box score cache hit for game ${gameId}`);
+        return JSON.parse(cachedBoxScore);
       }
 
-      // Detect changes
-      const changedGameIds = games.filter(game => {
-        const lastGame = this.lastGameData.get(game.gameId);
-        if (!lastGame) return true;
-
-        return JSON.stringify(game) !== JSON.stringify(lastGame);
-      }).map(game => game.gameId);
-
-      // Update cache
-      games.forEach(game => {
-        this.lastGameData.set(game.gameId, game);
-      });
-
-      return { games, changedGameIds };
-    } catch (error) {
-      logger.error('Error fetching games:', error);
-      throw error;
-    }
-  }
-
-  async getBoxScore(gameId: string): Promise<GameBoxScore | null> {
-    try {
-      if (process.env.USE_MOCK_DATA === 'true') {
+      // Try Redis for basic game data
+      const cachedGame = await this.redis.get(`game:${gameId}`);
+      if (cachedGame) {
+        logger.debug(`Basic game cache hit for game ${gameId}, but no box score available`);
         return null;
       }
 
-      const boxScoreUrl = `${this.NBA_BASE_URL}/boxscore_${gameId}.json`;
-      
-      console.log('\n=== BOX SCORE REQUEST DETAILS ===');
-      console.log('Game ID:', gameId);
-      console.log('Full URL:', boxScoreUrl);
-      console.log('BASE_URL:', this.NBA_BASE_URL);
-      console.log('================================\n');
+      // Fallback to DynamoDB
+      logger.info(`Cache miss for game ${gameId}, fetching from DynamoDB`);
+      const result = await this.docClient.send(new GetCommand({
+        TableName: this.tableName,
+        Key: { gameId }
+      }));
 
-      try {
-        const response = await axios.get(boxScoreUrl);
-        console.log('Box Score Response:', {
-          status: response.status,
-          hasGame: !!response.data.game,
-          gameId: response.data.game?.gameId,
-          url: boxScoreUrl
-        });
-
-        const game = response.data.game;
-        if (!game) {
-          logger.error('No game data found in response');
-          return null;
-        }
-
-        return this.transformBoxScoreData(response.data);
-      } catch (axiosError: any) {
-        // Log detailed error information
-        console.error('\n=== BOX SCORE REQUEST ERROR ===');
-        console.error('Request URL:', boxScoreUrl);
-        console.error('Error Status:', axiosError.response?.status);
-        console.error('Error Message:', axiosError.message);
-        console.error('Error Response:', axiosError.response?.data);
-        console.error('==============================\n');
-        throw axiosError;
+      if (!result.Item) {
+        return null;
       }
-    } catch (error) {
-      logger.error(`Error fetching box score for game ${gameId}:`, {
-        error,
-        requestedUrl: `${this.NBA_BASE_URL}/boxscore/boxscore_${gameId}.json`
-      });
+
+      // Check if the item is a box score (has totals property)
+      const gameData = result.Item;
+      if ('homeTeam' in gameData && 'totals' in gameData.homeTeam) {
+        // It's a box score
+        const boxScore = gameData as GameBoxScore;
+        await this.redis.set(
+          `boxscore:${gameId}`,
+          JSON.stringify(boxScore),
+          'EX',
+          60 * 5
+        );
+        return boxScore;
+      }
+
+      // If it's just basic game data, return null for box score request
+      logger.debug(`Found basic game data for ${gameId}, but no box score available`);
       return null;
-    }
-  }
-
-  private transformBoxScoreData(data: any): GameBoxScore {
-    try {
-      const game = data.game;
-
-      // Log team totals
-      logger.debug('Team Totals:', {
-        homeTeam: game.homeTeam.statistics,
-        awayTeam: game.awayTeam.statistics
-      });
-
-      // Log first player from each team
-      if (game.homeTeam.players?.length > 0) {
-        logger.debug('Sample Home Player:', {
-          player: game.homeTeam.players[0],
-          statistics: game.homeTeam.players[0].statistics
-        });
-      }
-
-      if (game.awayTeam.players?.length > 0) {
-        logger.debug('Sample Away Player:', {
-          player: game.awayTeam.players[0],
-          statistics: game.awayTeam.players[0].statistics
-        });
-      }
-
-      // If no valid game data, return null
-      if (!game || !game.homeTeam || !game.awayTeam) {
-        logger.error('Invalid game data structure:', data);
-        return null as any; // TypeScript workaround
-      }
-
-      return {
-        gameId: game.gameId,
-        status: game.gameStatus || 1,
-        period: parseInt(game.period || '0'),
-        clock: game.gameClock || '',
-        lastUpdate: Date.now(),
-        homeTeam: {
-          teamId: game.homeTeam.teamId,
-          teamTricode: game.homeTeam.teamTricode,
-          score: parseInt(game.homeTeam.score || '0'),
-          stats: {
-            rebounds: parseInt(game.homeTeam.statistics?.reboundsTotal || '0'),
-            assists: parseInt(game.homeTeam.statistics?.assists || '0'),
-            blocks: parseInt(game.homeTeam.statistics?.blocks || '0')
-          },
-          players: Array.isArray(game.homeTeam.players) 
-            ? game.homeTeam.players.map(this.transformPlayerStats)
-            : [],
-          totals: {
-            points: parseInt(game.homeTeam.score || '0'),
-            rebounds: parseInt(game.homeTeam.statistics?.reboundsTotal || '0'),
-            assists: parseInt(game.homeTeam.statistics?.assists || '0'),
-            steals: parseInt(game.homeTeam.statistics?.steals || '0'),
-            blocks: parseInt(game.homeTeam.statistics?.blocks || '0'),
-            personalFouls: parseInt(game.homeTeam.statistics?.foulsPersonal || '0'),
-            fgm: parseInt(game.homeTeam.statistics?.fieldGoalsMade || '0'),
-            fga: parseInt(game.homeTeam.statistics?.fieldGoalsAttempted || '0'),
-            threePm: parseInt(game.homeTeam.statistics?.threePointersMade || '0'),
-            threePa: parseInt(game.homeTeam.statistics?.threePointersAttempted || '0'),
-            ftm: parseInt(game.homeTeam.statistics?.freeThrowsMade || '0'),
-            fta: parseInt(game.homeTeam.statistics?.freeThrowsAttempted || '0')
-          }
-        },
-        awayTeam: {
-          teamId: game.awayTeam.teamId,
-          teamTricode: game.awayTeam.teamTricode,
-          score: parseInt(game.awayTeam.score || '0'),
-          stats: {
-            rebounds: parseInt(game.awayTeam.statistics?.reboundsTotal || '0'),
-            assists: parseInt(game.awayTeam.statistics?.assists || '0'),
-            blocks: parseInt(game.awayTeam.statistics?.blocks || '0')
-          },
-          players: Array.isArray(game.awayTeam.players)
-            ? game.awayTeam.players.map(this.transformPlayerStats)
-            : [],
-          totals: {
-            points: parseInt(game.awayTeam.score || '0'),
-            rebounds: parseInt(game.awayTeam.statistics?.reboundsTotal || '0'),
-            assists: parseInt(game.awayTeam.statistics?.assists || '0'),
-            steals: parseInt(game.awayTeam.statistics?.steals || '0'),
-            blocks: parseInt(game.awayTeam.statistics?.blocks || '0'),
-            personalFouls: parseInt(game.awayTeam.statistics?.foulsPersonal || '0'),
-            fgm: parseInt(game.awayTeam.statistics?.fieldGoalsMade || '0'),
-            fga: parseInt(game.awayTeam.statistics?.fieldGoalsAttempted || '0'),
-            threePm: parseInt(game.awayTeam.statistics?.threePointersMade || '0'),
-            threePa: parseInt(game.awayTeam.statistics?.threePointersAttempted || '0'),
-            ftm: parseInt(game.awayTeam.statistics?.freeThrowsMade || '0'),
-            fta: parseInt(game.awayTeam.statistics?.freeThrowsAttempted || '0')
-          }
-        }
-      };
     } catch (error) {
-      logger.error('Error transforming box score data:', error);
+      logger.error('Error fetching game:', error);
       throw error;
     }
   }
 
-  private transformPlayerStats(player: any): PlayerStats {
-    // Based on the sample data structure
-    return {
-      playerId: player.personId,
-      name: player.name,
-      position: player.position || '',
-      minutes: player.statistics?.minutesCalculated || '0:00',
-      points: parseInt(player.statistics?.points || '0'),
-      rebounds: parseInt(player.statistics?.reboundsTotal || '0'),
-      assists: parseInt(player.statistics?.assists || '0'),
-      steals: parseInt(player.statistics?.steals || '0'),
-      blocks: parseInt(player.statistics?.blocks || '0'),
-      personalFouls: parseInt(player.statistics?.foulsPersonal || '0'),
-      fgm: parseInt(player.statistics?.fieldGoalsMade || '0'),
-      fga: parseInt(player.statistics?.fieldGoalsAttempted || '0'),
-      threePm: parseInt(player.statistics?.threePointersMade || '0'),
-      threePa: parseInt(player.statistics?.threePointersAttempted || '0'),
-      ftm: parseInt(player.statistics?.freeThrowsMade || '0'),
-      fta: parseInt(player.statistics?.freeThrowsAttempted || '0'),
-      plusMinus: parseInt(player.statistics?.plusMinusPoints || '0')
-    };
+  async updateGame(game: GameScore | GameBoxScore): Promise<void> {
+    try {
+      // logger.debug('Updating game data:', game);
+      
+      // Update DynamoDB
+      await this.docClient.send(new PutCommand({
+        TableName: this.tableName,
+        Item: game
+      }));
+
+      // Store in appropriate Redis key based on type
+      const isBoxScore = 'homeTeam' in game && 'totals' in game.homeTeam;
+      const key = isBoxScore ? `boxscore:${game.gameId}` : `game:${game.gameId}`;
+      
+      await this.redis.set(
+        key,
+        JSON.stringify(game),
+        'EX',
+        60 * 5
+      );
+
+      logger.debug(`Updated ${isBoxScore ? 'box score' : 'game'} data in Redis for ${game.gameId}`);
+    } catch (error) {
+      logger.error('Error updating game:', error);
+      throw error;
+    }
+  }
+
+  async getLiveGames(): Promise<GameScore[]> {
+    try {
+      const result = await this.docClient.send(new QueryCommand({
+        TableName: this.tableName,
+        IndexName: 'StatusLastUpdatedIndex',
+        KeyConditionExpression: '#status = :status',
+        ExpressionAttributeNames: {
+          '#status': 'status'
+        },
+        ExpressionAttributeValues: {
+          ':status': 'LIVE'
+        }
+      }));
+
+      return (result.Items || []) as GameScore[];
+    } catch (error) {
+      logger.error('Error fetching live games:', error);
+      throw error;
+    }
+  }
+
+  async getAllGames(): Promise<GameScore[]> {
+    try {
+      // Try Redis first
+      const cachedGames = await this.redis.get('games:all');
+      if (cachedGames) {
+        logger.debug('Cache hit for all games');
+        return JSON.parse(cachedGames);
+      }
+
+      // Fallback to DynamoDB
+      logger.info('Cache miss for all games, fetching from DynamoDB');
+      const result = await this.docClient.send(new ScanCommand({
+        TableName: this.tableName
+      }));
+
+      const games = (result.Items || []) as GameScore[];
+      
+      // Cache the results
+      await this.redis.set(
+        'games:all',
+        JSON.stringify(games),
+        'EX',
+        60 * 5 // 5 minutes
+      );
+
+      return games;
+    } catch (error) {
+      logger.error('Error fetching all games:', error);
+      throw error;
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    await this.redis.quit();
+    await this.ddbClient.destroy();
   }
 } 

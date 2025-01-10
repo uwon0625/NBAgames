@@ -1,50 +1,71 @@
-import { getGames } from './gameService';
-import { broadcastGameUpdate } from '../services/websocketService';
+import { getGames } from './nbaService';
+import { GameService } from './gameService';
 import { logger } from '../config/logger';
+import { GameScore } from '../types';
 
-const POLL_INTERVAL = 60000; // 60 seconds to avoid rate limits
+export class GameUpdatesService {
+  private gameService: GameService;
+  private updateCallbacks: ((games: GameScore[]) => void)[] = [];
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private isPolling = false;
 
-let pollInterval: NodeJS.Timeout;
-let lastUpdate = 0;
-
-export const startGamePolling = () => {
-  if (pollInterval) {
-    clearInterval(pollInterval);
+  constructor() {
+    this.gameService = new GameService();
   }
 
-  // Initial fetch
-  fetchAndBroadcast();
-
-  pollInterval = setInterval(fetchAndBroadcast, POLL_INTERVAL);
-  logger.info('Game polling started');
-};
-
-const fetchAndBroadcast = async () => {
-  try {
-    // Add rate limiting
-    const now = Date.now();
-    if (now - lastUpdate < 30000) { // Minimum 30 seconds between requests
+  async pollForUpdates(intervalMs: number = 10000) {
+    if (this.isPolling) {
+      logger.warn('Already polling for updates');
       return;
     }
 
-    const games = await getGames();
-    const liveGames = games.filter(game => game.status === 'live');
-    
-    if (liveGames.length > 0) {
-      liveGames.forEach(game => {
-        broadcastGameUpdate(game);
-      });
-      lastUpdate = now;
-      logger.debug(`Broadcasted updates for ${liveGames.length} live games`);
-    }
-  } catch (error) {
-    logger.error('Error polling game updates:', error);
-  }
-};
+    this.isPolling = true;
+    logger.info('Starting game updates polling');
 
-export const stopGamePolling = () => {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-    logger.info('Game polling stopped');
+    const poll = async () => {
+      try {
+        const games = await getGames();
+        this.notifySubscribers(games);
+      } catch (error) {
+        logger.error('Error polling for game updates:', error);
+      }
+    };
+
+    // Initial poll
+    await poll();
+
+    // Set up interval polling
+    this.pollingInterval = setInterval(poll, intervalMs);
   }
-}; 
+
+  stopPolling() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+      this.isPolling = false;
+      logger.info('Stopped game updates polling');
+    }
+  }
+
+  subscribe(callback: (games: GameScore[]) => void) {
+    this.updateCallbacks.push(callback);
+    return () => {
+      this.updateCallbacks = this.updateCallbacks.filter(cb => cb !== callback);
+    };
+  }
+
+  private notifySubscribers(games: GameScore[]) {
+    this.updateCallbacks.forEach(callback => {
+      try {
+        callback(games);
+      } catch (error) {
+        logger.error('Error in game update callback:', error);
+      }
+    });
+  }
+
+  async cleanup() {
+    this.stopPolling();
+    await this.gameService.cleanup();
+  }
+} 

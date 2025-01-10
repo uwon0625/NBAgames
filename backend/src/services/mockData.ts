@@ -1,93 +1,32 @@
+import { GameBoxScore, GameScore } from '../types';
+import { GameStatus } from '../types/enums';
+
 export const mockScoreboard = {
   scoreboard: {
     games: [
       {
-        // Live game
-        gameId: '0022400476',
-        gameStatus: 2,
-        gameStatusText: 'In Progress',
+        gameId: '0022300476',
+        gameStatus: 2, // LIVE
         period: 3,
-        gameClock: 'PT05M30.00S',
+        gameClock: '5:30',
         homeTeam: {
-          teamId: 1610612758,
-          teamTricode: 'SAC',
-          score: 100,
+          teamId: 1610612738,
+          teamTricode: 'BOS',
+          score: 78,
           statistics: {
-            reboundsDefensive: '30',
-            reboundsOffensive: '10',
-            assists: '25',
-            blocks: '5'
-          }
-        },
-        awayTeam: {
-          teamId: 1610612763,
-          teamTricode: 'MEM',
-          score: 98,
-          statistics: {
-            reboundsDefensive: '28',
-            reboundsOffensive: '12',
-            assists: '22',
-            blocks: '4'
-          }
-        }
-      },
-      {
-        // Finished game
-        gameId: '0022400477',
-        gameStatus: 3,
-        gameStatusText: 'Final',
-        period: 4,
-        gameClock: '',
-        homeTeam: {
-          teamId: 1610612744,
-          teamTricode: 'GSW',
-          score: 120,
-          statistics: {
-            reboundsDefensive: '35',
-            reboundsOffensive: '8',
-            assists: '30',
-            blocks: '6'
+            reboundsTotal: '25',
+            assists: '15',
+            blocks: '3'
           }
         },
         awayTeam: {
           teamId: 1610612747,
           teamTricode: 'LAL',
-          score: 115,
+          score: 72,
           statistics: {
-            reboundsDefensive: '32',
-            reboundsOffensive: '9',
-            assists: '25',
-            blocks: '3'
-          }
-        }
-      },
-      {
-        // Scheduled game
-        gameId: '0022400478',
-        gameStatus: 1,
-        gameStatusText: 'Scheduled',
-        period: 0,
-        gameClock: '',
-        homeTeam: {
-          teamId: 1610612738,
-          teamTricode: 'BOS',
-          score: 0,
-          statistics: {
-            reboundsDefensive: '0',
-            reboundsOffensive: '0',
-            assists: '0',
-            blocks: '0'
-          }
-        },
-        awayTeam: {
-          teamId: 1610612751,
-          teamTricode: 'BKN',
-          score: 0,
-          statistics: {
-            reboundsDefensive: '0',
-            reboundsOffensive: '0',
-            assists: '0',
-            blocks: '0'
+            reboundsTotal: '22',
+            assists: '12',
+            blocks: '2'
           }
         }
       }
@@ -97,91 +36,97 @@ export const mockScoreboard = {
 
 export const mockBoxScore = {
   game: {
-    gameId: "0022400476",
+    gameId: '0022300476',
     gameStatus: 2,
     period: 3,
-    gameClock: "PT05M30.00S",
+    gameClock: '5:30',
+    arena: {
+      arenaName: 'TD Garden'
+    },
+    attendance: 19156,
     homeTeam: {
-      teamId: 1610612747,
-      teamCity: "Los Angeles",
-      teamName: "Lakers",
-      teamTricode: "LAL",
-      score: 85,
+      teamId: 1610612738,
+      teamTricode: 'BOS',
+      score: 78,
       statistics: {
-        reboundsDefensive: "25",
-        reboundsOffensive: "10",
-        assists: "20",
-        blocks: "5",
-        fieldGoalsMade: "32",
-        fieldGoalsAttempted: "65",
-        threePointersMade: "10",
-        threePointersAttempted: "25",
-        freeThrowsMade: "11",
-        freeThrowsAttempted: "15"
+        points: '78',
+        reboundsTotal: '25',
+        assists: '15',
+        blocks: '3',
+        steals: '5',
+        foulsPersonal: '8',
+        fieldGoalsMade: '30',
+        fieldGoalsAttempted: '65',
+        threePointersMade: '10',
+        threePointersAttempted: '28',
+        freeThrowsMade: '8',
+        freeThrowsAttempted: '10'
       },
       players: [
         {
-          playerId: "2544",
-          name: "LeBron James",
-          position: "F",
-          minutes: "28:35",
-          points: 25,
-          rebounds: 8,
-          assists: 8,
-          steals: 2,
-          blocks: 1,
-          personalFouls: 2,
-          fgm: 10,
-          fga: 15,
-          threePm: 3,
-          threePa: 6,
-          ftm: 2,
-          fta: 3,
-          plusMinus: 12
+          personId: '1629684',
+          name: 'Jayson Tatum',
+          position: 'F',
+          statistics: {
+            minutesCalculated: '28:45',
+            points: '25',
+            reboundsTotal: '8',
+            assists: '5',
+            steals: '2',
+            blocks: '1',
+            foulsPersonal: '2',
+            fieldGoalsMade: '9',
+            fieldGoalsAttempted: '18',
+            threePointersMade: '4',
+            threePointersAttempted: '9',
+            freeThrowsMade: '3',
+            freeThrowsAttempted: '4',
+            plusMinusPoints: '+12'
+          }
         }
       ]
     },
     awayTeam: {
-      teamId: 1610612763,
-      teamTricode: 'MEM',
-      score: 82,
+      teamId: 1610612747,
+      teamTricode: 'LAL',
+      score: 72,
       statistics: {
-        reboundsDefensive: '28',
-        reboundsOffensive: '12',
-        assists: '22',
-        blocks: '4',
-        fieldGoalsMade: '38',
-        fieldGoalsAttempted: '75',
-        threePointersMade: '10',
-        threePointersAttempted: '28',
-        freeThrowsMade: '14',
-        freeThrowsAttempted: '18'
+        points: '72',
+        reboundsTotal: '22',
+        assists: '12',
+        blocks: '2',
+        steals: '4',
+        foulsPersonal: '12',
+        fieldGoalsMade: '28',
+        fieldGoalsAttempted: '62',
+        threePointersMade: '8',
+        threePointersAttempted: '25',
+        freeThrowsMade: '8',
+        freeThrowsAttempted: '12'
       },
       players: [
         {
-          playerId: "1628991",
-          name: "Ja Morant",
-          position: "G",
-          minutes: "26:42",
-          points: 22,
-          rebounds: 4,
-          assists: 9,
-          steals: 1,
-          blocks: 0,
-          personalFouls: 3,
-          fgm: 8,
-          fga: 14,
-          threePm: 2,
-          threePa: 5,
-          ftm: 4,
-          fta: 5,
-          plusMinus: -8
+          personId: '2544',
+          name: 'LeBron James',
+          position: 'F',
+          statistics: {
+            minutesCalculated: '30:15',
+            points: '28',
+            reboundsTotal: '7',
+            assists: '6',
+            steals: '1',
+            blocks: '1',
+            foulsPersonal: '1',
+            fieldGoalsMade: '11',
+            fieldGoalsAttempted: '20',
+            threePointersMade: '3',
+            threePointersAttempted: '8',
+            freeThrowsMade: '3',
+            freeThrowsAttempted: '4',
+            plusMinusPoints: '-8'
+          }
         }
       ]
-    },
-    arena: {
-      arenaName: "Crypto.com Arena"
-    },
-    attendance: 18997
+    }
   }
-}; 
+};
