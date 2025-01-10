@@ -34,6 +34,17 @@ async function testPermissions(): Promise<void> {
     );
     logger.info('✓ DynamoDB delete permissions OK');
 
+    logger.info('Testing DynamoDB GSI permissions...');
+    await executeCommand(
+      `aws dynamodb query \
+      --table-name ${process.env.DYNAMODB_TABLE_NAME} \
+      --index-name StatusLastUpdatedIndex \
+      --key-condition-expression "status = :status" \
+      --expression-attribute-values '{":status":{"S":"LIVE"}}' \
+      --region ${process.env.AWS_REGION}`
+    );
+    logger.info('✓ DynamoDB GSI permissions OK');
+
     logger.info('All permissions tests passed');
   } catch (error: any) {
     if (error.stderr?.includes('AccessDenied') || error.stderr?.includes('AccessDeniedException')) {

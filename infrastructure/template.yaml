@@ -70,7 +70,6 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub '${AWS::StackName}-games-${Environment}'
-      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: gameId
           AttributeType: S
@@ -90,6 +89,12 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
 
   # Redis (ElastiCache) for caching
   RedisCluster:
@@ -198,7 +203,10 @@ Resources:
                   - dynamodb:PutItem
                   - dynamodb:GetItem
                   - dynamodb:Query
-                Resource: !GetAtt GamesTable.Arn
+                  - dynamodb:Scan
+                Resource: 
+                  - !GetAtt GamesTable.Arn
+                  - !Sub "${GamesTable.Arn}/index/*"
 
   # EventBridge Permission
   LambdaInvokePermission:

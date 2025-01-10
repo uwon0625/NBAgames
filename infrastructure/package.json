@@ -6,23 +6,25 @@
   "scripts": {
     "setup": "ts-node setup.ts",
     "test-permissions": "ts-node test-permissions.ts",
+    "setup-resources": "ts-node scripts/setup-resources.ts",
     "cleanup": "ts-node cleanup.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.716.0",
-    "@aws-sdk/lib-dynamodb": "^3.716.0",
-    "@aws-sdk/client-lambda": "^3.0.0",
+    "@aws-sdk/client-dynamodb": "^3.726.0",
     "@aws-sdk/client-iam": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.726.0",
+    "@aws-sdk/lib-dynamodb": "^3.726.0",
     "@types/js-yaml": "^4.0.9",
+    "archiver": "^5.3.1",
     "aws-cdk-lib": "^2.173.4",
-    "dotenv": "^16.4.7",
-    "archiver": "^5.3.1"
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
+    "@types/archiver": "^5.3.1",
     "@types/node": "^20.11.24",
     "js-yaml": "^4.1.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3",
-    "@types/archiver": "^5.3.1"
+    "typescript": "^5.3.3"
   }
 }
