@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/lambdas/**/*",
+    "src/types/**/*",
+    "src/config/**/*",
+    "src/services/nbaService.ts"
+  ]
+} 

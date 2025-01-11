@@ -11,20 +11,32 @@ function transformTeam(team: any): Team {
     throw new Error('Invalid team data');
   }
 
-  // For basic game data, statistics might not be available
-  // Use gameLeaders or other available data
+  // For basic game data, use statistics if available
   const score = parseInt(String(team.score || '0'));
+  const stats = team.statistics || {};
   
-  return {
+  // Add debug logging
+  logger.debug(`Team ${team.teamTricode} raw data:`, {
+    teamId: team.teamId,
+    score: score,
+    statistics: team.statistics
+  });
+
+  const transformedTeam = {
     teamId: team.teamId.toString(),
     teamTricode: team.teamTricode,
     score: score,
     stats: {
-      rebounds: 0,  // These will be populated in box score
-      assists: 0,   // These stats aren't available in basic game data
-      blocks: 0     // They'll come from the box score endpoint
+      rebounds: parseInt(String(stats.reboundsTotal || '0')),
+      assists: parseInt(String(stats.assists || '0')),
+      blocks: parseInt(String(stats.blocks || '0'))
     }
   };
+
+  // Log transformed result
+  logger.debug(`Team ${team.teamTricode} transformed:`, transformedTeam);
+
+  return transformedTeam;
 }
 
 function getGameStatus(gameStatus: number): GameStatus {
@@ -46,7 +58,6 @@ export function transformNBAGames(games: any[]): GameScore[] {
 
   logger.debug(`Transforming ${games.length} games`);
   return games.map(game => {
-    //logger.debug('Raw game data:', game);
     const transformed = {
       gameId: game.gameId,
       status: getGameStatus(game.gameStatus),
@@ -56,24 +67,33 @@ export function transformNBAGames(games: any[]): GameScore[] {
       awayTeam: transformTeam(game.awayTeam),
       lastUpdate: Date.now()
     };
-    //logger.debug('Transformed game data:', transformed);
     return transformed;
   });
 }
 
-export async function getGames(): Promise<GameScore[]> {
+export async function getTodaysGames(): Promise<GameScore[]> {
   try {
-    if (process.env.USE_MOCK_DATA === 'true') {
-      return transformNBAGames(mockScoreboard.scoreboard.games);
+    logger.info('Fetching today\'s games from NBA API');
+    const response = await axios.get(nbaApiConfig.scoreboardUrl);
+    
+    if (response.status !== 200) {
+      throw new Error(`NBA API responded with status: ${response.status}`);
     }
 
-    const response = await axios.get(nbaApiConfig.scoreboardUrl);
-    if (response.status === 200) {
-      return transformNBAGames(response.data.scoreboard.games);
+    // Log raw response for game 0022400531
+    const targetGame = response.data.scoreboard.games.find((g: any) => g.gameId === '0022400531');
+    if (targetGame) {
+      logger.debug('Raw data for game 0022400531:', {
+        homeTeam: targetGame.homeTeam,
+        awayTeam: targetGame.awayTeam
+      });
     }
-    throw new Error(`API responded with status: ${response.status}`);
+
+    const games = transformNBAGames(response.data.scoreboard.games);
+    logger.info(`Fetched ${games.length} games from NBA API`);
+    return games;
   } catch (error) {
-    logger.error('Error fetching games:', error);
+    logger.error('Failed to fetch today\'s games:', error);
     throw error;
   }
 }

@@ -1,4 +1,4 @@
-import { getGames } from './nbaService';
+import { getTodaysGames } from './nbaService';
 import { GameService } from './gameService';
 import { logger } from '../config/logger';
 import { GameScore } from '../types';
@@ -24,7 +24,7 @@ export class GameUpdatesService {
 
     const poll = async () => {
       try {
-        const games = await getGames();
+        const games = await getTodaysGames();
         this.notifySubscribers(games);
       } catch (error) {
         logger.error('Error polling for game updates:', error);

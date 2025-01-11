@@ -14,11 +14,14 @@
     "setup:dynamodb": "ts-node scripts/setupDynamoDB.ts",
     "setup:kafka": "ts-node scripts/setupKafka.ts",
     "setup:local": "docker-compose up -d && yarn wait 10 && yarn setup:dynamodb && yarn setup:kafka",
-    "start:dev": "yarn setup:local && ts-node-dev src/server.ts"
+    "start:dev": "yarn setup:local && ts-node-dev src/server.ts",
+    "build:lambda": "tsc -p tsconfig.lambda.json",
+    "deploy:lambda": "yarn build:lambda && ts-node scripts/deployLambda.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.0.0",
     "@aws-sdk/client-eventbridge": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.726.1",
     "@aws-sdk/client-sqs": "^3.0.0",
     "@aws-sdk/lib-dynamodb": "^3.0.0",
     "@aws-sdk/util-dynamodb": "^3.0.0",
@@ -47,7 +50,8 @@
     "nodemon": "^3.1.9",
     "redis": "^4.7.0",
     "winston": "^3.11.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zip-a-folder": "^3.1.8"
   },
   "devDependencies": {
     "@faker-js/faker": "^9.3.0",

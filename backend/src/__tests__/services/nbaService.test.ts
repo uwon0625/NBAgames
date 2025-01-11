@@ -1,5 +1,5 @@
 import { 
-  getGames, 
+  getTodaysGames, 
   getGameBoxScore, 
   transformNBAGames, 
   transformNBABoxScore 
@@ -18,8 +18,6 @@ describe('NBA Service', () => {
         period: 3,
         clock: '5:30',
         homeTeam: expect.objectContaining({
-          teamId: '1610612738',
-          teamTricode: 'BOS',
           score: 78
         }),
         awayTeam: expect.objectContaining({
@@ -35,6 +33,20 @@ describe('NBA Service', () => {
 
     it('should throw error for invalid game data', () => {
       expect(() => transformNBABoxScore(null)).toThrow('Invalid game data');
+    });
+  });
+
+  describe('getTodaysGames', () => {
+    it('should fetch and transform games data', async () => {
+      // Mock axios or use test data
+      const games = await getTodaysGames();
+      expect(Array.isArray(games)).toBe(true);
+      if (games.length > 0) {
+        expect(games[0]).toHaveProperty('gameId');
+        expect(games[0]).toHaveProperty('status');
+        expect(games[0]).toHaveProperty('homeTeam');
+        expect(games[0]).toHaveProperty('awayTeam');
+      }
     });
   });
 

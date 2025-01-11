@@ -1,6 +1,6 @@
 import { logger } from '../config/logger';
 import { GameScore } from '../types';
-import { getGames, getGameBoxScore } from './nbaService';
+import { getTodaysGames, getGameBoxScore } from './nbaService';
 import { GameService } from './gameService';
 import { WebSocketService } from './websocketService';
 import { GameStatus } from '../types/enums';
@@ -53,61 +53,58 @@ export class PollingService {
   }
 
   private async fetchAndUpdateGames() {
-    // Rate limiting check
-    const now = Date.now();
-    if (now - this.lastUpdate < this.minUpdateInterval) {
-      logger.debug('Skipping update due to rate limiting');
-      return;
-    }
-
     try {
-      // Fetch latest games from NBA API
-      const games = await getGames();
-      
+      const now = Date.now();
+      if (now - this.lastUpdate < this.minUpdateInterval) {
+        logger.debug('Skipping update - too soon since last update');
+        return;
+      }
+
+      const games = await getTodaysGames();
+      logger.info(`Fetched ${games.length} games, processing updates`);
+
       // Process each game
       for (const game of games) {
         if (game.status === GameStatus.SCHEDULED) {
           // For scheduled games, just store basic game data
           await this.gameService.updateGame(game);
         } else {
-          // Get box score for all non-scheduled games
+          // For live/final games, get box score for stats
           const boxScore = await getGameBoxScore(game.gameId);
           
           if (boxScore) {
             // Store complete box score data
             await this.gameService.updateGame(boxScore);
 
-            // Also store basic game data for list view
+            // Create game score with stats from box score
             const gameScore: GameScore = {
-              gameId: boxScore.gameId,
-              status: boxScore.status,
-              period: boxScore.period,
-              clock: boxScore.clock,
+              gameId: game.gameId,
+              status: game.status,
+              period: game.period,
+              clock: game.clock,
               homeTeam: {
-                teamId: boxScore.homeTeam.teamId,
-                teamTricode: boxScore.homeTeam.teamTricode,
-                score: boxScore.homeTeam.score,
-                stats: boxScore.homeTeam.stats
+                teamId: game.homeTeam.teamId,
+                teamTricode: game.homeTeam.teamTricode,
+                score: game.homeTeam.score,
+                stats: boxScore.homeTeam.stats  // Use stats from box score
               },
               awayTeam: {
-                teamId: boxScore.awayTeam.teamId,
-                teamTricode: boxScore.awayTeam.teamTricode,
-                score: boxScore.awayTeam.score,
-                stats: boxScore.awayTeam.stats
+                teamId: game.awayTeam.teamId,
+                teamTricode: game.awayTeam.teamTricode,
+                score: game.awayTeam.score,
+                stats: boxScore.awayTeam.stats  // Use stats from box score
               },
-              lastUpdate: boxScore.lastUpdate
+              lastUpdate: now
             };
 
             await this.gameService.updateGame(gameScore);
             
-            // Track live games and broadcast updates
-            if (boxScore.status === GameStatus.LIVE) {
-              this.liveGames.add(gameScore.gameId);
-              this.wsService.broadcastGameUpdate(boxScore);
-            } else if (boxScore.status === GameStatus.FINAL) {
-              // If game was being tracked as live, send final update
+            if (game.status === GameStatus.LIVE) {
+              this.liveGames.add(game.gameId);
+              this.wsService.broadcastGameUpdate(gameScore);
+            } else if (game.status === GameStatus.FINAL) {
               if (this.liveGames.has(game.gameId)) {
-                this.wsService.broadcastGameUpdate(boxScore);
+                this.wsService.broadcastGameUpdate(gameScore);
                 this.liveGames.delete(game.gameId);
                 logger.info(`Game ${game.gameId} finished, removing from live games`);
               }
