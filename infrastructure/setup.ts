@@ -5,6 +5,17 @@ import fs from 'fs';
 import path from 'path';
 dotenv.config();
 
+const LAMBDA_CONFIG = {
+  boxScoreHandler: {
+    name: 'boxScoreHandler',
+    arn: `arn:aws:lambda:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:function:boxScoreHandler`
+  },
+  gameUpdateHandler: {
+    name: 'gameUpdateHandler',
+    arn: `arn:aws:lambda:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:function:gameUpdateHandler`
+  }
+};
+
 async function ensureDirectoryExists(dirPath: string): Promise<void> {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -77,6 +88,50 @@ async function waitForDynamoTableStatus(tableName: string, expectedStatus: strin
     }
   }
   throw new Error(`Timeout waiting for table ${tableName} to be ${expectedStatus}`);
+}
+
+async function setupEventBridgeRules() {
+  try {
+    // Create EventBridge rule for game updates
+    await executeCommand(
+      'aws events put-rule ' +
+      '--name nba-game-updates ' +
+      '--schedule-expression "rate(1 minute)" ' +
+      '--state ENABLED'
+    );
+
+    // Set Lambda as target
+    await executeCommand(
+      'aws events put-targets ' +
+      '--rule nba-game-updates ' +
+      '--targets ' + 
+      `'[{"Id": "1", "Arn": "${LAMBDA_CONFIG.gameUpdateHandler.arn}"}]'`
+    );
+
+    logger.info('EventBridge rules configured successfully');
+  } catch (error) {
+    logger.error('Failed to setup EventBridge rules:', error);
+    throw error;
+  }
+}
+
+async function setupLambdaPermissions() {
+  try {
+    // Allow EventBridge to invoke game update handler
+    await executeCommand(
+      'aws lambda add-permission ' +
+      `--function-name ${LAMBDA_CONFIG.gameUpdateHandler.name} ` +
+      '--statement-id EventBridgeInvoke ' +
+      '--action lambda:InvokeFunction ' +
+      '--principal events.amazonaws.com ' +
+      `--source-arn arn:aws:events:${process.env.AWS_REGION}:${process.env.AWS_ACCOUNT_ID}:rule/nba-game-updates`
+    );
+
+    logger.info('Lambda permissions configured successfully');
+  } catch (error) {
+    logger.error('Failed to setup Lambda permissions:', error);
+    throw error;
+  }
 }
 
 async function setup() {
@@ -240,33 +295,11 @@ async function setup() {
       }
     }
 
-    logger.info('Setup completed successfully');
-    logger.info('\nResource Summary:');
-    logger.info(`S3 Bucket: ${bucketName}`);
-    logger.info(`DynamoDB Table: ${gamesTableName}`);
-    logger.info('\nNext steps:');
-    logger.info('Please ask your AWS admin to:');
-    logger.info('1. Configure S3 bucket security:');
-    logger.info('   - Enable bucket versioning');
-    logger.info('   - Block public access');
-    if (!tableExists) {
-      logger.info('2. Create DynamoDB table with these properties:');
-      logger.info(`   - Table name: ${gamesTableName}`);
-      logger.info('   - Partition key: gameId (String)');
-      logger.info('   - Billing mode: PAY_PER_REQUEST');
-    }
-    logger.info(`${tableExists ? '2' : '3'}. Grant these additional permissions to user dev3:`);
-    logger.info('   - s3:PutBucketPublicAccessBlock');
-    logger.info('   - s3:PutBucketVersioning');
-    if (!tableExists) {
-      logger.info('   - dynamodb:CreateTable');
-    }
-    logger.info('   - dynamodb:PutItem');
-    logger.info('   - dynamodb:GetItem');
-    logger.info('   - dynamodb:UpdateItem');
-    logger.info('   - dynamodb:Query');
-    logger.info('   - dynamodb:Scan');
+    // Setup Lambda permissions and EventBridge rules
+    await setupLambdaPermissions();
+    await setupEventBridgeRules();
 
+    logger.info('Infrastructure setup completed successfully');
   } catch (error) {
     logger.error('Infrastructure setup failed:', error);
     process.exit(1);

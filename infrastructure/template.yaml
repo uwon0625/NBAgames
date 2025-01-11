@@ -217,6 +217,24 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt GamePollingRule.Arn
 
+  GameUpdateRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: nba-game-updates
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Id: GameUpdateLambda
+          Arn: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:gameUpdateHandler
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:gameUpdateHandler
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GameUpdateRule.Arn
+
 Outputs:
   KafkaBrokers:
     Description: Kafka broker endpoints
@@ -228,4 +246,14 @@ Outputs:
     Description: DynamoDB table name
     Value: !Ref GamesTable
     Export:
-      Name: !Sub '${AWS::StackName}-games-table-${Environment}' 
+      Name: !Sub '${AWS::StackName}-games-table-${Environment}'
+  GameUpdateHandlerArn:
+    Description: ARN of the game update Lambda function
+    Value: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:gameUpdateHandler
+    Export:
+      Name: !Sub '${AWS::StackName}-game-update-handler-${Environment}'
+  BoxScoreHandlerArn:
+    Description: ARN of the box score Lambda function
+    Value: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:boxScoreHandler
+    Export:
+      Name: !Sub '${AWS::StackName}-box-score-handler-${Environment}' 
