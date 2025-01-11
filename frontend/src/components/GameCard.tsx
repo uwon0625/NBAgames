@@ -3,7 +3,7 @@
 import React, { useContext } from 'react';
 import { Game } from '@/types/Game';
 import { RouterContext } from '@/utils/RouterContext';
-import { formatClock } from '@/utils/formatters';
+import { formatClock, formatGameStatus } from '@/utils/formatters';
 import { GameStatus } from '@/types/enums';
 
 interface GameCardProps {
@@ -42,12 +42,20 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
 
   const getGameStatusText = (): { top: string, bottom: string } => {
     if (game.status === GameStatus.LIVE && game.period) {
+      const statusText = formatGameStatus(game.status, game.period, game.clock);
+      if (statusText === 'Half') {
+        return {
+          top: statusText,
+          bottom: ''
+        };
+      }
+      const [quarter, time] = statusText.split(' ');
       return {
-        top: `Q${game.period}`,
-        bottom: formatClock(game.clock)
+        top: quarter,
+        bottom: time || ''
       };
     }
-    
+
     if (game.status === GameStatus.FINAL) {
       return {
         top: 'Final',
@@ -56,7 +64,7 @@ export const GameCard: React.FC<GameCardProps> = ({ game }) => {
     }
 
     return {
-      top: 'Scheduled',
+      top: 'Today',
       bottom: ''
     };
   };

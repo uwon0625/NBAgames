@@ -3,24 +3,23 @@ import { GameStatus } from '@/types/enums';
 export const formatClock = (clock: string | undefined): string => {
   if (!clock) return '';
 
-  // Handle PT format (PT00M23.70S)
+  // Handle PT format (PT00M00.00S)
   if (clock.startsWith('PT')) {
     const matches = clock.match(/PT(\d+)M([\d.]+)S/);
     if (matches) {
       const minutes = parseInt(matches[1]);
       const seconds = Math.floor(parseFloat(matches[2]));
+      // Return empty string for 0:00 as it will be handled by formatGameStatus
+      if (minutes === 0 && seconds === 0) return '';
       return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
   }
 
   // Handle MM:SS format
   if (clock.includes(':')) {
+    // Return empty string for 0:00 as it will be handled by formatGameStatus
+    if (clock === '0:00') return '';
     return clock;
-  }
-
-  // Handle simple minute format
-  if (!isNaN(Number(clock))) {
-    return `${clock}:00`;
   }
 
   return clock;
@@ -29,10 +28,12 @@ export const formatClock = (clock: string | undefined): string => {
 export function formatGameStatus(status: GameStatus, period: number, clock: string): string {
   if (status === GameStatus.LIVE) {
     // Show "Half" for second quarter ending
-    if (period === 2 && clock === '0:00') {
+    if (period === 2 && (clock === '0:00' || clock === 'PT00M00.00S')) {
       return 'Half';
     }
-    return `Q${period} ${clock}`;
+    // Show quarter and clock if available
+    const formattedClock = formatClock(clock);
+    return formattedClock ? `Q${period} ${formattedClock}` : `Q${period}`;
   }
   
   if (status === GameStatus.FINAL) {
