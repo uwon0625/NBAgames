@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { PollingService } from './services/pollingService';
-import { GameService } from './services/gameService';
 import { WebSocketService } from './services/websocketService';
+import { GameService } from './services/gameService';
+import { PollingService } from './services/pollingService';
 import { logger } from './config/logger';
 import apiRouter from './routes/api';
 import adminRouter from './routes/admin';
@@ -59,22 +59,36 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start polling service when server starts
+// Add environment check at the top
+const isLambda = process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+const isLocalDev = process.env.NODE_ENV === 'development';
+
+if (isLocalDev) {
+  logger.info('Running in development mode');
+}
+
+// Start the server
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, async () => {
   logger.info(`Server running on port ${PORT}`);
-  try {
-    await pollingService.startPolling();
-    logger.info('Game polling service started');
-  } catch (error) {
-    logger.error('Failed to start polling service:', error);
-  }
 });
 
+// Start polling service if running locally but not in development mode
+// In AWS, updates come from Lambda functions instead
+if (!isLambda && !isLocalDev) {
+  logger.info('Starting polling service for production local run');
+  const gameService = new GameService();
+  const pollingService = new PollingService(gameService, wsService);
+  pollingService.startPolling();
+} else {
+  logger.info(isLambda ? 
+    'Running in Lambda - no polling needed' : 
+    'Running in development mode - no polling started');
+}
+
 // Handle shutdown gracefully
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received. Starting graceful shutdown...');
-  await pollingService.cleanup();
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received. Shutting down gracefully...');
   server.close(() => {
     logger.info('Server closed');
     process.exit(0);

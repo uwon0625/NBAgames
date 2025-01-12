@@ -2,12 +2,20 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "module": "commonjs",
+    "target": "es2018",
+    "moduleResolution": "node",
+    "esModuleInterop": true
   },
   "include": [
     "src/lambdas/**/*",
-    "src/types/**/*",
     "src/config/**/*",
-    "src/services/nbaService.ts"
+    "src/services/**/*",
+    "src/types/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts"
   ]
 } 

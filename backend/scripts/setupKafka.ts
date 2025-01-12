@@ -1,109 +1,150 @@
-import { Kafka } from 'kafkajs';
+import { 
+  KafkaClient, 
+  CreateClusterCommand,
+  CreateConfigurationCommand,
+  GetBootstrapBrokersCommand 
+} from '@aws-sdk/client-kafka';
 import { logger } from '../src/config/logger';
 import dotenv from 'dotenv';
+import { setupKafkaSecurityGroups } from './setupSecurityGroups';
+
 dotenv.config();
 
-const RETRY_OPTIONS = {
-  initialRetryTime: 1000,
-  maxRetryTime: 30000,
-  retries: 10,
-  factor: 1.5,
-};
+const kafka = new KafkaClient({ region: process.env.AWS_REGION });
 
-const kafka = new Kafka({
-  clientId: process.env.KAFKA_CLIENT_ID || 'nba-game-updates',
-  brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
-  connectionTimeout: 10000,
-  retry: RETRY_OPTIONS
-});
+// Validate required environment variables
+function validateEnvironment() {
+  const required = {
+    SUBNET_1: process.env.SUBNET_1,
+    SUBNET_2: process.env.SUBNET_2,
+    SUBNET_3: process.env.SUBNET_3,
+    VPC_ID: process.env.VPC_ID
+  };
 
-const admin = kafka.admin();
+  const missing = Object.entries(required)
+    .filter(([_, value]) => !value)
+    .map(([key]) => key);
 
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    const timeoutId = setTimeout(() => {
-      clearTimeout(timeoutId);
-      resolve();
-    }, ms);
-  });
-}
-
-async function waitForKafka(maxAttempts = 10): Promise<boolean> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await admin.connect();
-      logger.info('Successfully connected to Kafka');
-      return true;
-    } catch (error) {
-      if (attempt === maxAttempts) {
-        throw error;
-      }
-      logger.warn(`Waiting for Kafka to be ready (attempt ${attempt}/${maxAttempts})...`);
-      await delay(2000); // Fixed 2-second delay between attempts
-    }
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
-  return false;
+
+  return required as { [K in keyof typeof required]: string };
 }
 
 async function setupKafka() {
   try {
-    logger.info('Starting Kafka setup...');
-    
-    // Wait for Kafka to be ready
-    await waitForKafka();
-    
-    const existingTopics = await admin.listTopics();
-    const topicName = process.env.KAFKA_TOPIC || 'nba-game-updates';
-    
-    if (existingTopics.includes(topicName)) {
-      logger.info(`Topic ${topicName} already exists`);
-    } else {
-      // Create topics if they don't exist
-      await admin.createTopics({
-        topics: [{
-          topic: topicName,
-          numPartitions: 1,
-          replicationFactor: 1
-        }]
-      });
-      logger.info(`Topic ${topicName} created successfully`);
+    // Validate environment variables first
+    const env = validateEnvironment();
+
+    // First set up security groups
+    const securityGroupId = await setupKafkaSecurityGroups();
+    if (!securityGroupId) {
+      throw new Error('Failed to create or get security group ID');
     }
 
-  } catch (error: any) {
-    if (error.message?.includes('Timeout')) {
-      logger.error('Failed to connect to Kafka - timeout reached');
-    } else {
-      logger.error('Failed to setup Kafka topics:', error);
+    // Create MSK configuration
+    const configResponse = await kafka.send(new CreateConfigurationCommand({
+      Name: 'nba-live-kafka-config',
+      Description: 'Configuration for NBA Live Updates Kafka cluster',
+      KafkaVersions: ['2.8.1'],
+      ServerProperties: Buffer.from([
+        'auto.create.topics.enable=true',
+        'default.replication.factor=3',
+        'min.insync.replicas=2'
+      ].join('\n'))
+    }));
+
+    if (!configResponse.Arn) {
+      throw new Error('Failed to get configuration ARN');
     }
+
+    logger.info('Created MSK configuration:', configResponse);
+
+    // Create MSK cluster with security group
+    const createClusterResponse = await kafka.send(new CreateClusterCommand({
+      ClusterName: 'nba-live-kafka',
+      KafkaVersion: '2.8.1',
+      NumberOfBrokerNodes: 3,
+      BrokerNodeGroupInfo: {
+        InstanceType: 'kafka.t3.small',
+        ClientSubnets: [
+          env.SUBNET_1,
+          env.SUBNET_2,
+          env.SUBNET_3
+        ],
+        SecurityGroups: [securityGroupId],
+        StorageInfo: {
+          EbsStorageInfo: {
+            VolumeSize: 100
+          }
+        }
+      },
+      EncryptionInfo: {
+        EncryptionInTransit: {
+          ClientBroker: 'TLS',
+          InCluster: true
+        }
+      },
+      ConfigurationInfo: {
+        Arn: configResponse.Arn,
+        Revision: 1
+      }
+    }));
+
+    if (!createClusterResponse.ClusterArn) {
+      throw new Error('Failed to get cluster ARN');
+    }
+
+    logger.info('MSK cluster creation initiated:', createClusterResponse);
+
+    // Store the cluster ARN for later use
+    const clusterArn = createClusterResponse.ClusterArn;
+    process.env.MSK_CLUSTER_ARN = clusterArn;
+
+    // Wait for cluster to become active
+    logger.info('Waiting for cluster to become active...');
+    await waitForClusterActive(clusterArn);
+
+    // Get broker information
+    const brokersResponse = await kafka.send(new GetBootstrapBrokersCommand({
+      ClusterArn: clusterArn
+    }));
+
+    logger.info('Bootstrap Brokers:', {
+      PLAINTEXT: brokersResponse.BootstrapBrokerString,
+      TLS: brokersResponse.BootstrapBrokerStringTls,
+      IAM: brokersResponse.BootstrapBrokerStringSaslIam
+    });
+
+  } catch (error) {
+    logger.error('Failed to setup MSK:', error);
     throw error;
-  } finally {
-    try {
-      await admin.disconnect();
-      logger.info('Kafka admin client disconnected');
-    } catch (error) {
-      logger.warn('Error disconnecting Kafka admin client:', error);
-    }
   }
 }
 
-// Execute setup with a fixed timeout
-const SETUP_TIMEOUT = 30000; // 30 seconds
+async function waitForClusterActive(clusterArn: string, maxAttempts = 60) {
+  const { DescribeClusterCommand } = await import('@aws-sdk/client-kafka');
+  
+  for (let i = 0; i < maxAttempts; i++) {
+    const describeResponse = await kafka.send(new DescribeClusterCommand({
+      ClusterArn: clusterArn
+    }));
+    
+    const state = describeResponse.ClusterInfo?.State;
+    
+    if (state === 'ACTIVE') {
+      logger.info('Cluster is now active');
+      return;
+    } else if (state === 'FAILED') {
+      throw new Error('Cluster creation failed');
+    }
+    
+    logger.info(`Waiting for cluster to become active (attempt ${i + 1}/${maxAttempts})...`);
+    await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds between checks
+  }
+  
+  throw new Error('Timeout waiting for cluster to become active');
+}
 
-let timeoutId: NodeJS.Timeout;
-const timeoutPromise = new Promise((_, reject) => {
-  timeoutId = setTimeout(() => {
-    reject(new Error('Kafka setup timeout'));
-  }, SETUP_TIMEOUT);
-});
-
-Promise.race([setupKafka(), timeoutPromise])
-  .then(() => {
-    clearTimeout(timeoutId);
-    logger.info('Kafka setup completed successfully');
-    process.exit(0);
-  })
-  .catch((error) => {
-    clearTimeout(timeoutId);
-    logger.error('Kafka setup failed:', error);
-    process.exit(1);
-  }); 
+setupKafka(); 

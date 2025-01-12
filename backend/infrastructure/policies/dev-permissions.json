@@ -1,0 +1,140 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:DeleteObject",
+        "s3:DeleteBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketPolicy"
+      ],
+      "Resource": [
+        "arn:aws:s3:::nba-live-886436930781-dev",
+        "arn:aws:s3:::nba-live-886436930781-dev/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:us-east-1:886436930781:table/nba_games",
+        "arn:aws:dynamodb:us-east-1:886436930781:table/nba_games/index/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListFunctions",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:InvokeFunction",
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:DeleteFunction",
+        "lambda:AddPermission",
+        "lambda:RemovePermission"
+      ],
+      "Resource": [
+        "arn:aws:lambda:us-east-1:886436930781:function:boxScoreHandler",
+        "arn:aws:lambda:us-east-1:886436930781:function:gameUpdateHandler"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:ListFunctions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::886436930781:role/lambda-nba-role"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "events:PutRule",
+        "events:PutTargets",
+        "events:ListRules",
+        "events:ListTargetsByRule",
+        "events:DescribeRule",
+        "events:DeleteRule",
+        "events:RemoveTargets"
+      ],
+      "Resource": [
+        "arn:aws:events:us-east-1:886436930781:rule/nba-*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "events:ListRules"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DescribeSecurityGroups",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:DescribeVpcs"
+      ],
+      "Resource": [
+        "arn:aws:ec2:us-east-1:886436930781:security-group/*",
+        "arn:aws:ec2:us-east-1:886436930781:vpc/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kafka:CreateCluster",
+        "kafka:DeleteCluster",
+        "kafka:GetBootstrapBrokers",
+        "kafka:CreateConfiguration",
+        "kafka:DescribeCluster",
+        "kafka:DescribeConfiguration",
+        "kafka:ListClusters",
+        "kafka:ListConfigurations"
+      ],
+      "Resource": [
+        "arn:aws:kafka:us-east-1:886436930781:cluster/*",
+        "arn:aws:kafka:us-east-1:886436930781:configuration/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateTags"
+      ],
+      "Resource": "arn:aws:ec2:us-east-1:886436930781:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:CreateAction": "CreateSecurityGroup"
+        }
+      }
+    }
+  ]
+} 

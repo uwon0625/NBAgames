@@ -34,41 +34,6 @@
         "arn:aws:dynamodb:us-east-1:886436930781:table/nba_games",
         "arn:aws:dynamodb:us-east-1:886436930781:table/nba_games/index/*"
       ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "lambda:ListFunctions",
-        "lambda:GetFunction",
-        "lambda:GetFunctionConfiguration",
-        "lambda:InvokeFunction",
-        "lambda:CreateFunction",
-        "lambda:UpdateFunctionCode",
-        "lambda:UpdateFunctionConfiguration",
-        "lambda:DeleteFunction",
-        "lambda:AddPermission",
-        "lambda:RemovePermission"
-      ],
-      "Resource": [
-        "arn:aws:lambda:us-east-1:886436930781:function:boxScoreHandler",
-        "arn:aws:lambda:us-east-1:886436930781:function:gameUpdateHandler"
-      ]
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "lambda:ListFunctions"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "iam:PassRole"
-      ],
-      "Resource": [
-        "arn:aws:iam::886436930781:role/lambda-nba-role"
-      ]
     }
   ]
 } 

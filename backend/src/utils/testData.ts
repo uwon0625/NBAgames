@@ -1,25 +1,26 @@
-import { GameScore } from '../types';
+import { GameScore, Team } from '../types';
+import { GameStatus } from '../types/enums';
 
-export const testGames: GameScore[] = [
+export const mockGames: GameScore[] = [
   {
-    gameId: '1',
-    status: 'live',
+    gameId: '0022300476',
+    status: GameStatus.LIVE,
     period: 2,
     clock: '5:30',
     homeTeam: {
-      teamId: '1',
-      name: 'Lakers',
-      score: 58,
+      teamId: '1610612747',
+      teamTricode: 'LAL',
+      score: 55,
       stats: {
-        rebounds: 24,
+        rebounds: 20,
         assists: 15,
         blocks: 3
       }
     },
     awayTeam: {
-      teamId: '2',
-      name: 'Warriors',
-      score: 62,
+      teamId: '1610612744',
+      teamTricode: 'GSW',
+      score: 60,
       stats: {
         rebounds: 22,
         assists: 18,
@@ -27,6 +28,28 @@ export const testGames: GameScore[] = [
       }
     },
     lastUpdate: Date.now()
+  }
+];
+
+export const mockTeams: Team[] = [
+  {
+    teamId: '1610612747',
+    teamTricode: 'LAL',
+    score: 55,
+    stats: {
+      rebounds: 20,
+      assists: 15,
+      blocks: 3
+    }
   },
-  // ... other test games
+  {
+    teamId: '1610612744',
+    teamTricode: 'GSW',
+    score: 60,
+    stats: {
+      rebounds: 22,
+      assists: 18,
+      blocks: 2
+    }
+  }
 ]; 

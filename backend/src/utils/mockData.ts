@@ -1,4 +1,5 @@
 import { GameBoxScore, PlayerStats, TeamBoxScore } from '../types';
+import { GameStatus } from '../types/enums';
 
 const TEAMS = {
   LAL: {
@@ -87,7 +88,7 @@ export function generateMockBoxScore(gameId: string): GameBoxScore {
 
   return {
     gameId,
-    status: 'final',
+    status: GameStatus.FINAL,
     period: 4,
     clock: '0:00',
     arena: 'Crypto.com Arena',
