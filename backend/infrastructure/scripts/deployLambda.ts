@@ -1,6 +1,6 @@
 import { LambdaClient, CreateFunctionCommand, UpdateFunctionCodeCommand, UpdateFunctionConfigurationCommand, GetFunctionCommand } from '@aws-sdk/client-lambda';
 import { zip } from 'zip-a-folder';
-import { logger } from '../src/config/logger';
+import { logger } from '../../src/config/logger';
 import path from 'path';
 import fs from 'fs';
 import { execSync } from 'child_process';

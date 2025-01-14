@@ -1,5 +1,5 @@
 import { LambdaClient, InvokeCommand, GetFunctionCommand } from '@aws-sdk/client-lambda';
-import { logger } from '../src/config/logger';
+import { logger } from '../../../src/config/logger';
 
 const lambda = new LambdaClient({ region: 'us-east-1' });
 

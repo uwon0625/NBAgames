@@ -19,7 +19,7 @@
   },
   "include": [
     "*.ts",
-    "../backend/src/config/logger.ts"
+    "../src/config/logger.ts"
   ],
   "exclude": [
     "node_modules",

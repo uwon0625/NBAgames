@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist",
+    "outDir": "infrastructure/lambda/dist",
     "rootDir": "src",
     "module": "commonjs",
     "target": "es2018",

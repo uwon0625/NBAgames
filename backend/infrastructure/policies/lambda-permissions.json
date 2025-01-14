@@ -2,9 +2,19 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "AllowLambdaListOperations",
       "Effect": "Allow",
       "Action": [
         "lambda:ListFunctions",
+        "lambda:ListTags",
+        "lambda:ListVersionsByFunction"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowLambdaFunctionOperations",
+      "Effect": "Allow",
+      "Action": [
         "lambda:GetFunction",
         "lambda:GetFunctionConfiguration",
         "lambda:InvokeFunction",
@@ -16,9 +26,8 @@
         "lambda:RemovePermission"
       ],
       "Resource": [
-        "arn:aws:lambda:us-east-1:886436930781:function:boxScoreHandler",
-        "arn:aws:lambda:us-east-1:886436930781:function:gameUpdateHandler"
+        "arn:aws:lambda:us-east-1:886436930781:function:*"
       ]
     }
   ]
-} 
+}

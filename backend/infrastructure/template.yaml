@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
 Description: NBA Live Scores application infrastructure
 
 Parameters:
@@ -6,184 +7,232 @@ Parameters:
     Type: String
     Default: dev
     AllowedValues: [dev, staging, prod]
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  NBAStatsUrl:
+    Type: String
+    Default: "https://stats.nba.com/stats"
+    Description: "Base URL for the NBA Stats API"
+  NBABaseUrl:
+    Type: String
+    Default: "https://cdn.nba.com/static/json/liveData"
+    Description: "Base URL for the NBA API"
+  ArtifactsBucketName:
+    Type: String
+    Description: "Name of the S3 bucket for artifacts"
 
 Resources:
-  # MSK Cluster
-  MSKCluster:
-    Type: AWS::MSK::Cluster
+  # DynamoDB Table
+  GamesTable:
+    Type: AWS::DynamoDB::Table
     Properties:
-      ClusterName: !Sub '${AWS::StackName}-kafka-${Environment}'
-      KafkaVersion: '2.8.1'
-      NumberOfBrokerNodes: 2
-      BrokerNodeGroupInfo:
-        InstanceType: kafka.t3.small
-        ClientSubnets: 
-          - !Ref PublicSubnet1
-          - !Ref PublicSubnet2
-        SecurityGroups: 
-          - !Ref MSKSecurityGroup
-      EncryptionInfo:
-        EncryptionInTransit:
-          ClientBroker: TLS
-          InCluster: true
+      TableName: !Sub nba-games-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: gameId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: gameId
+          KeyType: HASH
 
-  # VPC for MSK
-  VPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: '10.0.0.0/16'
-      EnableDnsHostnames: true
-      EnableDnsSupport: true
-      Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-vpc-${Environment}'
-
-  # Subnets
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: '10.0.1.0/24'
-      AvailabilityZone: !Select [0, !GetAZs '']
-
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: '10.0.2.0/24'
-      AvailabilityZone: !Select [1, !GetAZs '']
-
-  # Security Group for MSK
+  # MSK Security Group
   MSKSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for MSK cluster
-      VpcId: !Ref VPC
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 9092
           ToPort: 9092
-          CidrIp: '0.0.0.0/0'
+          CidrIp: 0.0.0.0/0  # You might want to restrict this in production
+      Tags:
+        - Key: Name
+          Value: !Sub nba-live-msk-sg-${Environment}
 
-  # DynamoDB Table (existing)
-  GamesTable:
-    Type: AWS::DynamoDB::Table
+  # MSK Cluster
+  MSKCluster:
+    Type: AWS::MSK::Cluster
     Properties:
-      TableName: !Sub '${AWS::StackName}-games-${Environment}'
-      AttributeDefinitions:
-        - AttributeName: gameId
-          AttributeType: S
-        - AttributeName: status
-          AttributeType: S
-        - AttributeName: lastUpdated
-          AttributeType: N
-      KeySchema:
-        - AttributeName: gameId
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: StatusLastUpdatedIndex
-          KeySchema:
-            - AttributeName: status
-              KeyType: HASH
-            - AttributeName: lastUpdated
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-          ProvisionedThroughput:
-            ReadCapacityUnits: 5
-            WriteCapacityUnits: 5
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
-
-  # Redis (ElastiCache) for caching
-  RedisCluster:
-    Type: AWS::ElastiCache::CacheCluster
-    Properties:
-      CacheNodeType: cache.t3.micro
-      Engine: redis
-      NumCacheNodes: 1
-      VpcSecurityGroupIds: 
-        - !Ref RedisSecurityGroup
-
-  RedisSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for Redis cluster
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 6379
-          ToPort: 6379
-          CidrIp: '0.0.0.0/0'
+      ClusterName: !Sub nba-live-kafka-${Environment}
+      KafkaVersion: 2.8.1
+      NumberOfBrokerNodes: 3
+      BrokerNodeGroupInfo:
+        InstanceType: kafka.t3.small
+        ClientSubnets: !Ref SubnetIds
+        SecurityGroups:
+          - !Ref MSKSecurityGroup
+        StorageInfo:
+          EBSStorageInfo:
+            VolumeSize: 100
+      EncryptionInfo:
+        EncryptionInTransit:
+          ClientBroker: TLS_PLAINTEXT  # Allow both TLS and plaintext
+          InCluster: true
+      # Add configuration for easier debugging
+      LoggingInfo:
+        BrokerLogs:
+          CloudWatchLogs:
+            Enabled: true
+            LogGroup: !Sub /aws/msk/nba-live-${Environment}
 
   # Lambda Functions
-  KafkaConsumerFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub '${AWS::StackName}-kafka-consumer-${Environment}'
-      Runtime: nodejs18.x
-      Handler: kafkaConsumer.handler
-      Code:
-        S3Bucket: !Ref S3_BUCKET_NAME
-        S3Key: lambda/kafkaConsumer.zip
-      Environment:
-        Variables:
-          DYNAMODB_TABLE_NAME: !Ref GamesTable
-          REDIS_ENDPOINT: !GetAtt RedisCluster.RedisEndpoint.Address
-          KAFKA_BROKERS: !GetAtt MSKCluster.BootstrapBrokers
-          ENVIRONMENT: !Ref Environment
-      Timeout: 30
-      MemorySize: 256
-      Role: !GetAtt LambdaExecutionRole.Arn
-      VpcConfig:
-        SecurityGroupIds: 
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PublicSubnet1
-          - !Ref PublicSubnet2
-
   GameUpdateFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${AWS::StackName}-game-update-${Environment}'
-      Runtime: nodejs18.x
-      Handler: gameUpdateHandler.handleGameUpdate
+      FunctionName: !Sub nba-game-updates-${Environment}
       Code:
-        S3Bucket: !Ref S3_BUCKET_NAME
-        S3Key: lambda/gameUpdateHandler.zip
+        S3Bucket: !Ref ArtifactsBucketName
+        S3Key: lambdas/gameUpdateHandler.zip
+      Handler: gameUpdateHandler.handler
+      Runtime: nodejs18.x
+      Timeout: 60
+      Role: !GetAtt LambdaExecutionRole.Arn
       Environment:
         Variables:
-          KAFKA_BROKERS: !GetAtt MSKCluster.BootstrapBrokers
-          ENVIRONMENT: !Ref Environment
-      Timeout: 30
-      MemorySize: 256
-      Role: !GetAtt LambdaExecutionRole.Arn
+          DYNAMODB_TABLE_NAME: !Ref GamesTable
+          NBA_API_URL: !Ref NBABaseUrl
+          MSK_CLUSTER_ARN: !Ref MSKCluster
 
-  # Lambda Security Group
-  LambdaSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+  GameUpdatePermission:
+    Type: AWS::Lambda::Permission
     Properties:
-      GroupDescription: Security group for Lambda functions
-      VpcId: !Ref VPC
+      FunctionName: !Ref GameUpdateFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GameUpdateRule.Arn
+
+  BoxScoreFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub nba-box-scores-${Environment}
+      Code:
+        S3Bucket: !Ref ArtifactsBucketName
+        S3Key: lambdas/boxScoreHandler.zip
+      Handler: boxScoreHandler.handler
+      Runtime: nodejs18.x
+      Timeout: 30
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref GamesTable
+          NBA_API_URL: !Ref NBABaseUrl
+          MSK_CLUSTER_ARN: !Ref MSKCluster
+
+  BoxScorePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BoxScoreFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BoxScoreRule.Arn
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub nba-live-api-${Environment}
+
+  GamesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: games
+
+  UpdateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref GamesResource
+      PathPart: update
+
+  BoxScoreResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref GamesResource
+      PathPart: "{gameId}"
+
+  BoxScoreMethodResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref BoxScoreResource
+      PathPart: boxscore
 
   # EventBridge Rules
-  GamePollingRule:
+  GameUpdateRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: !Sub '${AWS::StackName}-game-polling-${Environment}'
-      Description: 'Poll for NBA game updates every minute'
-      ScheduleExpression: 'rate(1 minute)'
+      Name: !Sub nba-game-updates-${Environment}
+      Description: "Trigger game updates every 30 seconds"
+      ScheduleExpression: "rate(30 seconds)"
       State: ENABLED
       Targets:
         - Arn: !GetAtt GameUpdateFunction.Arn
-          Id: 'GameUpdateFunction'
+          Id: "GameUpdateFunction"
 
-  # Lambda Execution Role
+  BoxScoreRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub nba-box-scores-${Environment}
+      Description: "Process game updates for box scores"
+      EventPattern:
+        source: ["nba-live-updates"]
+        detail-type: ["GAME_UPDATE"]
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BoxScoreFunction.Arn
+          Id: "BoxScoreFunction"
+
+  # API Gateway Methods
+  UpdateMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref UpdateResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GameUpdateFunction.Arn}/invocations
+
+  BoxScoreMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref BoxScoreMethodResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BoxScoreFunction.Arn}/invocations
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: [UpdateMethod, BoxScoreMethod]
+    Properties:
+      RestApiId: !Ref ApiGateway
+
+  # API Gateway Stage
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
+      StageName: !Ref Environment
+
+  # IAM Roles and Policies
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-lambda-role-${Environment}'
+      RoleName: !Sub nba-lambda-role-${Environment}
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -194,7 +243,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: DynamoDBAccess
+        - PolicyName: !Sub nba-lambda-policy-${Environment}
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -202,58 +251,53 @@ Resources:
                 Action:
                   - dynamodb:PutItem
                   - dynamodb:GetItem
-                  - dynamodb:Query
-                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt GamesTable.Arn
+              - Effect: Allow
+                Action:
+                  - kafka:DescribeCluster
+                  - kafka:GetBootstrapBrokers
+                  - kafka:ListTopics
+                Resource: !GetAtt MSKCluster.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
                 Resource: 
-                  - !GetAtt GamesTable.Arn
-                  - !Sub "${GamesTable.Arn}/index/*"
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/msk/*
 
-  # EventBridge Permission
-  LambdaInvokePermission:
+  # API Gateway Lambda Permissions
+  GameUpdateApiPermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref GameUpdateFunction
       Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt GamePollingRule.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*
 
-  GameUpdateRule:
-    Type: AWS::Events::Rule
-    Properties:
-      Name: nba-game-updates
-      ScheduleExpression: rate(1 minute)
-      State: ENABLED
-      Targets:
-        - Id: GameUpdateLambda
-          Arn: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:gameUpdateHandler
-
-  LambdaPermission:
+  BoxScoreApiPermission:
     Type: AWS::Lambda::Permission
     Properties:
+      FunctionName: !Ref BoxScoreFunction
       Action: lambda:InvokeFunction
-      FunctionName: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:gameUpdateHandler
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt GameUpdateRule.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*
 
 Outputs:
-  KafkaBrokers:
-    Description: Kafka broker endpoints
-    Value: !GetAtt MSKCluster.BootstrapBrokers
-  RedisEndpoint:
-    Description: Redis endpoint
-    Value: !GetAtt RedisCluster.RedisEndpoint.Address
-  GamesTableName:
-    Description: DynamoDB table name
+  DynamoDBTableName:
+    Description: Name of the DynamoDB table
     Value: !Ref GamesTable
-    Export:
-      Name: !Sub '${AWS::StackName}-games-table-${Environment}'
-  GameUpdateHandlerArn:
-    Description: ARN of the game update Lambda function
-    Value: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:gameUpdateHandler
-    Export:
-      Name: !Sub '${AWS::StackName}-game-update-handler-${Environment}'
-  BoxScoreHandlerArn:
-    Description: ARN of the box score Lambda function
-    Value: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:boxScoreHandler
-    Export:
-      Name: !Sub '${AWS::StackName}-box-score-handler-${Environment}' 
+  MSKClusterArn:
+    Description: ARN of the MSK cluster
+    Value: !Ref MSKCluster
+  GameUpdateFunctionArn:
+    Description: ARN of the Game Update Lambda function
+    Value: !GetAtt GameUpdateFunction.Arn
+  BoxScoreFunctionArn:
+    Description: ARN of the Box Score Lambda function
+    Value: !GetAtt BoxScoreFunction.Arn
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment} 
