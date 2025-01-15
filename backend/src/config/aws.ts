@@ -1,15 +1,8 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { EventBridgeClient } from '@aws-sdk/client-eventbridge';
-import { SQSClient } from '@aws-sdk/client-sqs';
+import { LambdaClient } from '@aws-sdk/client-lambda';
+import { S3Client } from '@aws-sdk/client-s3';
+import { IAMClient } from '@aws-sdk/client-iam';
 
-export const dynamoDb = new DynamoDBClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-});
-
-export const eventBridge = new EventBridgeClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-});
-
-export const sqs = new SQSClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-}); 
+// Initialize AWS clients
+export const lambda = new LambdaClient({ region: process.env.AWS_REGION });
+export const s3 = new S3Client({ region: process.env.AWS_REGION });
+export const iam = new IAMClient({ region: process.env.AWS_REGION }); 

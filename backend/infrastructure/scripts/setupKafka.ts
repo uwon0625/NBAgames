@@ -18,6 +18,7 @@ import { EC2Client, DescribeSecurityGroupsCommand } from '@aws-sdk/client-ec2';
 import { logger } from '../../src/config/logger';
 import dotenv from 'dotenv';
 import path from 'path';
+import * as fs from 'fs';
 
 const envPath = path.resolve(__dirname, '../../.env');
 dotenv.config({ path: envPath });
@@ -124,7 +125,7 @@ async function getExistingConfiguration(configName: string) {
 }
 
 // Add wait function to check cluster state
-async function waitForClusterActive(clusterArn: string, maxAttempts = 60): Promise<boolean> {
+async function waitForClusterActive(clusterArn: string, maxAttempts = 90): Promise<boolean> {
   logger.info('Waiting for cluster to become active...');
   
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -143,160 +144,165 @@ async function waitForClusterActive(clusterArn: string, maxAttempts = 60): Promi
       throw new Error('Cluster creation failed');
     }
 
-    // Wait 30 seconds before next check
-    await new Promise(resolve => setTimeout(resolve, 30000));
+    // Wait 1 minute before next check
+    await new Promise(resolve => setTimeout(resolve, 60000));
   }
 
   throw new Error('Timeout waiting for cluster to become active');
 }
 
-export async function setupKafka() {
+async function waitForClusterDeletion(clusterArn: string): Promise<void> {
+  const maxAttempts = 90;
+  let attempts = 0;
+
+  while (attempts < maxAttempts) {
+    try {
+      const response = await kafka.send(new DescribeClusterCommand({
+        ClusterArn: clusterArn
+      }));
+      
+      if (!response.ClusterInfo) {
+        // Cluster no longer exists
+        return;
+      }
+
+      logger.info(`Cluster state: ${response.ClusterInfo.State} (attempt ${attempts + 1}/${maxAttempts})`);
+      
+      if (response.ClusterInfo.State === 'DELETING') {
+        await new Promise(resolve => setTimeout(resolve, 60000));
+        attempts++;
+        continue;
+      }
+    } catch (error: any) {
+      if (error.name === 'NotFoundException') {
+        // Cluster has been deleted
+        return;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Timeout waiting for cluster deletion');
+}
+
+async function updateBrokerEndpoints(clusterArn: string): Promise<void> {
   try {
-    const clusterName = process.env.MSK_CLUSTER_NAME;
-    const vpcId = process.env.VPC_ID;
-    const subnet1 = process.env.SUBNET_1;
-    const subnet2 = process.env.SUBNET_2;
-    const subnet3 = process.env.SUBNET_3;
-    const securityGroupName = process.env.SECURITY_GROUP;
-    logger.info('Environment variables:', {
-      clusterName,
-      vpcId,
-      subnet1,
-      securityGroupName,
-      envPath
-    });
-
-    // Validate all required environment variables
-    if (!clusterName || !vpcId || !subnet1 || !subnet2 || !subnet3 || !securityGroupName) {
-      throw new Error(
-        'Missing required environment variables. Please ensure the following are set:\n' +
-        '- MSK_CLUSTER_NAME\n' +
-        '- VPC_ID\n' +
-        '- SUBNET_1\n' +
-        '- SUBNET_2\n' +
-        '- SUBNET_3\n' +
-        '- SECURITY_GROUP'
-      );
-    }
-
-    // Check if cluster already exists
-    const existingCluster = await getExistingCluster(clusterName);
-    if (existingCluster) {
-      logger.info(`MSK cluster '${clusterName}' already exists`);
-      
-      // Wait for cluster to be active even if it exists
-      if (existingCluster.State !== 'ACTIVE') {
-        logger.info(`Cluster exists but is in ${existingCluster.State} state`);
-        if (!existingCluster.ClusterArn) {
-          throw new Error('Existing cluster ARN not found');
-        }
-        await waitForClusterActive(existingCluster.ClusterArn);
-      }
-      
-      // Get bootstrap brokers
-      const brokersResponse = await kafka.send(new GetBootstrapBrokersCommand({
-        ClusterArn: existingCluster.ClusterArn!
-      }));
-
-      const brokers = brokersResponse.BootstrapBrokerString;
-      if (brokers) {
-        logger.info('Bootstrap brokers:', brokers);
-      }
-
-      return existingCluster.ClusterArn;
-    }
-
-    // Get the security group ID
-    const securityGroupId = await getSecurityGroupId(securityGroupName);
-    logger.info(`Using security group: ${securityGroupName} (${securityGroupId})`);
-
-    // Create or get KMS key
-    const kmsKeyId = await createKMSKey();
-    logger.info('Using KMS key:', kmsKeyId);
-
-    // Create MSK configuration
-    const configName = `${clusterName}-config`;
-    const existingConfig = await getExistingConfiguration(configName);
-    
-    let configArn: string | undefined;
-    if (existingConfig) {
-      logger.info(`Using existing configuration: ${configName}`);
-      configArn = existingConfig.Arn;
-    } else {
-      const serverProperties = Buffer.from(`
-        auto.create.topics.enable=true
-        default.replication.factor=3
-        min.insync.replicas=2
-        num.partitions=3
-      `.trim());
-
-      const configResponse = await kafka.send(new CreateConfigurationCommand({
-        Name: configName,
-        ServerProperties: serverProperties
-      }));
-      configArn = configResponse.Arn;
-      logger.info(`Created new configuration: ${configName}`);
-    }
-
-    if (!configArn) {
-      throw new Error('Failed to get or create configuration');
-    }
-
-    // Create MSK cluster
-    const createClusterResponse = await kafka.send(new CreateClusterCommand({
-      ClusterName: clusterName,
-      KafkaVersion: '2.8.1',
-      NumberOfBrokerNodes: 3,
-      BrokerNodeGroupInfo: {
-        InstanceType: 'kafka.t3.small',
-        ClientSubnets: [subnet1, subnet2, subnet3],
-        StorageInfo: {
-          EbsStorageInfo: {
-            VolumeSize: 100
-          }
-        },
-        SecurityGroups: [securityGroupId]
-      },
-      EncryptionInfo: {
-        EncryptionAtRest: {
-          DataVolumeKMSKeyId: kmsKeyId
-        },
-        EncryptionInTransit: {
-          ClientBroker: 'TLS',
-          InCluster: true
-        }
-      },
-      ConfigurationInfo: {
-        Arn: configArn,
-        Revision: 1
-      },
-      EnhancedMonitoring: 'DEFAULT'
-    }));
-
-    const clusterArn = createClusterResponse.ClusterArn;
-    if (!clusterArn) {
-      throw new Error('Failed to get cluster ARN');
-    }
-
-    logger.info('MSK cluster creation initiated:', clusterArn);
-    logger.info('Waiting for cluster to become active (this may take 15-20 minutes)...');
-
-    // Wait for cluster to become active
-    await waitForClusterActive(clusterArn);
-    
-    // Now get bootstrap brokers
+    // Get the broker endpoints
     const brokersResponse = await kafka.send(new GetBootstrapBrokersCommand({
       ClusterArn: clusterArn
     }));
 
     const brokers = brokersResponse.BootstrapBrokerString;
-    if (brokers) {
-      logger.info('Bootstrap brokers:', brokers);
-      // You might want to save this to your .env file or elsewhere
+    if (!brokers) {
+      throw new Error('Failed to get broker endpoints');
     }
 
-    logger.info('MSK setup completed successfully');
-    return clusterArn;
+    logger.info(`Got broker endpoints: ${brokers}`);
+
+    // Update .env file
+    const envPath = path.resolve(__dirname, '../../.env');
+    let envContent = fs.readFileSync(envPath, 'utf8');
+
+    // Replace or add KAFKA_BROKERS
+    if (envContent.includes('KAFKA_BROKERS=')) {
+      envContent = envContent.replace(
+        /KAFKA_BROKERS=.*/,
+        `KAFKA_BROKERS=${brokers}`
+      );
+    } else {
+      envContent += `\nKAFKA_BROKERS=${brokers}`;
+    }
+
+    fs.writeFileSync(envPath, envContent);
+    logger.info(`Updated .env with Kafka broker endpoints: ${brokers}`);
+
+  } catch (error) {
+    logger.error('Failed to update broker endpoints:', error);
+    throw error;
+  }
+}
+
+export async function setupKafka() {
+  try {
+    const clusterName = process.env.MSK_CLUSTER_NAME || 'nba-live-kafka';
+    const securityGroupName = process.env.SECURITY_GROUP_NAME || 'nba-live-security-group';
+
+    // Get security group ID first
+    const securityGroupId = await getSecurityGroupId(securityGroupName);
+    logger.info(`Got security group ID: ${securityGroupId}`);
+
+    logger.info('Environment variables:', {
+      clusterName,
+      vpcId: process.env.VPC_ID,
+      subnet1: process.env.SUBNET_1,
+      securityGroupId,
+      envPath: path.resolve(__dirname, '../.env')
+    });
+
+    // Check if cluster exists
+    const existingClusters = await kafka.send(new ListClustersCommand({
+      ClusterNameFilter: clusterName
+    }));
+
+    if (existingClusters.ClusterInfoList && existingClusters.ClusterInfoList.length > 0) {
+      const cluster = existingClusters.ClusterInfoList[0];
+      logger.info(`MSK cluster '${clusterName}' already exists`);
+
+      if (cluster.State === 'DELETING') {
+        logger.info('Cluster exists but is in DELETING state');
+        logger.info('Waiting for deletion to complete...');
+        await waitForClusterDeletion(cluster.ClusterArn!);
+        logger.info('Cluster deletion completed');
+      } else if (cluster.State === 'ACTIVE') {
+        // Update broker endpoints in .env
+        await updateBrokerEndpoints(cluster.ClusterArn!);
+        return;
+      }
+    }
+
+    // Validate required parameters
+    if (!process.env.SUBNET_1 || !process.env.SUBNET_2 || !process.env.SUBNET_3) {
+      throw new Error('Missing required subnet IDs');
+    }
+
+    // Create new cluster
+    logger.info('Creating new MSK cluster...');
+    const createResponse = await kafka.send(new CreateClusterCommand({
+      ClusterName: clusterName,
+      KafkaVersion: '3.4.0',
+      NumberOfBrokerNodes: 3,
+      BrokerNodeGroupInfo: {
+        InstanceType: 'kafka.t3.small',
+        ClientSubnets: [
+          process.env.SUBNET_1,
+          process.env.SUBNET_2,
+          process.env.SUBNET_3
+        ],
+        SecurityGroups: [securityGroupId],
+        StorageInfo: {
+          EbsStorageInfo: {
+            VolumeSize: 100
+          }
+        }
+      },
+      EncryptionInfo: {
+        EncryptionInTransit: {
+          ClientBroker: 'PLAINTEXT',
+          InCluster: true
+        }
+      }
+    }));
+
+    if (!createResponse.ClusterArn) {
+      throw new Error('Failed to get cluster ARN from create response');
+    }
+
+    logger.info('Waiting for cluster to become active...');
+    await waitForClusterActive(createResponse.ClusterArn);
+    
+    // Update broker endpoints in .env
+    await updateBrokerEndpoints(createResponse.ClusterArn);
+
   } catch (error) {
     logger.error('Failed to setup MSK:', error);
     throw error;

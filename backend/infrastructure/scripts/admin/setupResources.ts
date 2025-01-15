@@ -12,8 +12,8 @@ async function setupResources() {
     logger.info('Starting AWS resources setup...');
 
     // 1. Update IAM policies first
-    // logger.info('Setting up IAM policies...');
-    // await updateIAMPolicy();
+    logger.info('Setting up IAM policies...');
+    await updateIAMPolicy();
 
     // 2. Create Security Groups
     logger.info('Setting up Security Groups...');
@@ -31,11 +31,10 @@ async function setupResources() {
     logger.info('Setting up EventBridge...');
     await setupEventBridge();
 
-    // 6. Setup MSK (Kafka)
-    logger.info('Setting up MSK cluster...');
-    await setupKafka();
+    // Note: MSK and Redis are now handled by CloudFormation (yarn deploy:cfn)
+    // Do not create them here
 
-    // 7. Setup Lambda Functions
+    // 6. Setup Lambda Functions
     logger.info('Setting up Lambda functions...');
     await setupLambda();
 

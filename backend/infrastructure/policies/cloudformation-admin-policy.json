@@ -11,6 +11,7 @@
         "iam:PutRolePolicy",
         "iam:DeleteRolePolicy",
         "iam:ListRolePolicies",
+        "iam:GetRolePolicy",
         "iam:ListAttachedRolePolicies",
         "iam:DetachRolePolicy",
         "iam:AttachRolePolicy",
@@ -31,7 +32,9 @@
         "dynamodb:*",
         "kms:*",
         "ec2:*",
-        "tag:*"
+        "tag:*",
+        "apigateway:*",
+        "elasticache:*"
       ],
       "Resource": "*"
     }

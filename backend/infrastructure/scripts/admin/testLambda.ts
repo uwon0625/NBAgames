@@ -1,79 +1,67 @@
-import { LambdaClient, InvokeCommand, GetFunctionCommand } from '@aws-sdk/client-lambda';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { logger } from '../../../src/config/logger';
+import dotenv from 'dotenv';
+import path from 'path';
 
-const lambda = new LambdaClient({ region: 'us-east-1' });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
-async function testLambda(functionName: string) {
+const lambda = new LambdaClient({ region: process.env.AWS_REGION });
+
+async function testLambda() {
   try {
+    const functionName = 'gameUpdateHandler';
     logger.info(`Testing Lambda function: ${functionName}`);
 
-    // First, get the function configuration to verify the handler
-    const getFunctionCommand = new GetFunctionCommand({
-      FunctionName: functionName
-    });
-    const functionConfig = await lambda.send(getFunctionCommand);
-    logger.info(`Function configuration:`, functionConfig.Configuration);
-    
-    const command = new InvokeCommand({
+    // Get function configuration
+    const config = await lambda.send(new InvokeCommand({
       FunctionName: functionName,
-      InvocationType: 'RequestResponse',
+      LogType: 'Tail',
       Payload: JSON.stringify({
-        gameId: '0022300476' // Test game ID
+        games: [{
+          gameId: "0022300001",
+          gameStatus: 1,
+          gameStatusText: "7:30 pm ET",
+          homeTeam: {
+            teamId: "1610612738",
+            teamName: "Celtics",
+            score: 0
+          },
+          awayTeam: {
+            teamId: "1610612752",
+            teamName: "Knicks",
+            score: 0
+          },
+          period: 0,
+          gameClock: "PT12M",
+          gameDate: "2024-01-14"
+        }]
       })
-    });
+    }));
 
-    const response = await lambda.send(command);
-    
-    if (response.StatusCode === 200) {
-      const payload = JSON.parse(Buffer.from(response.Payload!).toString());
-      
-      // Check if the payload contains an error
-      if (payload.errorType || payload.errorMessage) {
-        logger.error(`Lambda function ${functionName} failed:`, payload);
-        return false;
-      }
+    logger.info('Function configuration:', config);
 
-      // Check if the response contains an error status code
-      if (payload.statusCode && payload.statusCode >= 400) {
-        logger.error(`Lambda function ${functionName} returned error status:`, {
-          statusCode: payload.statusCode,
-          error: payload.body ? JSON.parse(payload.body) : payload
-        });
-        return false;
-      }
-
-      logger.info(`Lambda test successful for ${functionName}:`, payload);
-      return true;
-    } else {
-      logger.error(`Lambda function ${functionName} returned status code ${response.StatusCode}`);
-      return false;
+    if (config.FunctionError) {
+      logger.error('Lambda function returned error:', {
+        error: config.FunctionError,
+        logs: Buffer.from(config.LogResult || '', 'base64').toString()
+      });
+      return;
     }
+
+    const response = JSON.parse(Buffer.from(config.Payload!).toString());
+    if (response.statusCode !== 200) {
+      logger.error(`Lambda function ${functionName} returned error status:`, response);
+      return;
+    }
+
+    logger.info(`Lambda function ${functionName} executed successfully:`, response);
+
   } catch (error) {
-    logger.error(`Error testing ${functionName}:`, error);
-    return false;
+    logger.error('Failed to test Lambda function:', error);
+    throw error;
   }
 }
 
-async function runTests() {
-  const results = await Promise.all([
-    testLambda('gameUpdateHandler')
-  ]);
-
-  const allPassed = results.every(result => result);
-  
-  if (allPassed) {
-    logger.info('All Lambda tests passed');
-    process.exit(0);
-  } else {
-    logger.error('Some Lambda tests failed');
-    process.exit(1);
-  }
-}
-
-// Add handler for script interruption
-process.on('SIGINT', () => {
-  logger.warn('Tests interrupted');
-  process.exit(1);
-});
-
-runTests(); 
+if (require.main === module) {
+  testLambda().catch(() => process.exit(1));
+} 

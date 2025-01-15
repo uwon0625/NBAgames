@@ -11,17 +11,17 @@ Parameters:
     Type: AWS::EC2::VPC::Id
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-  NBAStatsUrl:
-    Type: String
-    Default: "https://stats.nba.com/stats"
-    Description: "Base URL for the NBA Stats API"
   NBABaseUrl:
     Type: String
-    Default: "https://cdn.nba.com/static/json/liveData"
+    Default: "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
     Description: "Base URL for the NBA API"
   ArtifactsBucketName:
     Type: String
     Description: "Name of the S3 bucket for artifacts"
+  VpcCidr:
+    Type: String
+    Description: "CIDR block for the VPC"
+    Default: "172.31.0.0/16"
 
 Resources:
   # DynamoDB Table
@@ -36,6 +36,11 @@ Resources:
       KeySchema:
         - AttributeName: gameId
           KeyType: HASH
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: NBA-Live
 
   # MSK Security Group
   MSKSecurityGroup:
@@ -47,17 +52,23 @@ Resources:
         - IpProtocol: tcp
           FromPort: 9092
           ToPort: 9092
-          CidrIp: 0.0.0.0/0  # You might want to restrict this in production
+          CidrIp: !Ref VpcCidr
       Tags:
         - Key: Name
           Value: !Sub nba-live-msk-sg-${Environment}
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: NBA-Live
 
   # MSK Cluster
   MSKCluster:
     Type: AWS::MSK::Cluster
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       ClusterName: !Sub nba-live-kafka-${Environment}
-      KafkaVersion: 2.8.1
+      KafkaVersion: 3.4.0
       NumberOfBrokerNodes: 3
       BrokerNodeGroupInfo:
         InstanceType: kafka.t3.small
@@ -69,14 +80,11 @@ Resources:
             VolumeSize: 100
       EncryptionInfo:
         EncryptionInTransit:
-          ClientBroker: TLS_PLAINTEXT  # Allow both TLS and plaintext
+          ClientBroker: PLAINTEXT
           InCluster: true
-      # Add configuration for easier debugging
-      LoggingInfo:
-        BrokerLogs:
-          CloudWatchLogs:
-            Enabled: true
-            LogGroup: !Sub /aws/msk/nba-live-${Environment}
+      Tags:
+        Environment: !Ref Environment
+        Project: NBA-Live
 
   # Lambda Functions
   GameUpdateFunction:
@@ -84,9 +92,14 @@ Resources:
     Properties:
       FunctionName: !Sub nba-game-updates-${Environment}
       Code:
-        S3Bucket: !Ref ArtifactsBucketName
-        S3Key: lambdas/gameUpdateHandler.zip
-      Handler: gameUpdateHandler.handler
+        ZipFile: |
+          exports.handler = async (event) => {
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: 'Game update function' })
+            };
+          };
+      Handler: index.handler
       Runtime: nodejs18.x
       Timeout: 60
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -109,9 +122,14 @@ Resources:
     Properties:
       FunctionName: !Sub nba-box-scores-${Environment}
       Code:
-        S3Bucket: !Ref ArtifactsBucketName
-        S3Key: lambdas/boxScoreHandler.zip
-      Handler: boxScoreHandler.handler
+        ZipFile: |
+          exports.handler = async (event) => {
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: 'Box score function' })
+            };
+          };
+      Handler: index.handler
       Runtime: nodejs18.x
       Timeout: 30
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -168,8 +186,8 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Name: !Sub nba-game-updates-${Environment}
-      Description: "Trigger game updates every 30 seconds"
-      ScheduleExpression: "rate(30 seconds)"
+      Description: "Trigger game updates every minute"
+      ScheduleExpression: "rate(1 minute)"
       State: ENABLED
       Targets:
         - Arn: !GetAtt GameUpdateFunction.Arn
@@ -242,6 +260,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
         - PolicyName: !Sub nba-lambda-policy-${Environment}
           PolicyDocument:
@@ -253,20 +272,12 @@ Resources:
                   - dynamodb:GetItem
                   - dynamodb:UpdateItem
                 Resource: !GetAtt GamesTable.Arn
+              # Uncomment MSK permissions
               - Effect: Allow
                 Action:
                   - kafka:DescribeCluster
                   - kafka:GetBootstrapBrokers
-                  - kafka:ListTopics
-                Resource: !GetAtt MSKCluster.Arn
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: 
-                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
-                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/msk/*
+                Resource: !Ref MSKCluster
 
   # API Gateway Lambda Permissions
   GameUpdateApiPermission:
@@ -285,6 +296,139 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*
 
+  # Add ElastiCache Redis Cluster
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Redis cluster
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: !Ref VpcCidr
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for Redis cluster
+      SubnetIds: !Ref SubnetIds
+
+  RedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheClusterId: !Sub nba-live-redis-${Environment}
+      Engine: redis
+      CacheNodeType: cache.t3.micro
+      NumCacheNodes: 1
+      VpcSecurityGroupIds: 
+        - !Ref RedisSecurityGroup
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      Port: 6379
+
+  # Security Group for VPC Endpoints
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for VPC endpoints
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCidr
+
+  # VPC Endpoints for AWS services
+  DynamoDBEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcEndpointType: Gateway
+
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    DependsOn: VpcDnsAttributes
+    Properties:
+      VpcId: !Ref VpcId
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+      SubnetIds: !Ref SubnetIds
+
+  # Enable DNS settings for VPC
+  VpcDnsSettings:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    Properties:
+      VpcId: !Ref VpcId
+      DhcpOptionsId: !Ref DhcpOptions
+
+  DhcpOptions:
+    Type: AWS::EC2::DHCPOptions
+    Properties:
+      DomainNameServers: ['AmazonProvidedDNS']
+
+  # Update VPC DNS attributes
+  VpcDnsAttributes:
+    Type: Custom::VpcDnsAttributes
+    Properties:
+      ServiceToken: !GetAtt VpcDnsAttributesFunction.Arn
+      VpcId: !Ref VpcId
+
+  # Lambda function to update VPC DNS attributes
+  VpcDnsAttributesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const ec2 = new AWS.EC2();
+          
+          exports.handler = async (event, context) => {
+            try {
+              const vpcId = event.ResourceProperties.VpcId;
+              
+              await ec2.modifyVpcAttribute({
+                VpcId: vpcId,
+                EnableDnsHostnames: { Value: true }
+              }).promise();
+              
+              await ec2.modifyVpcAttribute({
+                VpcId: vpcId,
+                EnableDnsSupport: { Value: true }
+              }).promise();
+              
+              return {
+                Status: 'SUCCESS',
+                PhysicalResourceId: vpcId
+              };
+            } catch (error) {
+              console.error('Error:', error);
+              throw error;
+            }
+          };
+      Runtime: nodejs18.x
+      Timeout: 30
+
+  # Add permissions to modify VPC attributes
+  VpcModifyPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${AWS::StackName}-vpc-modify
+      Roles: 
+        - !Ref LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:ModifyVpcAttribute
+            Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VpcId}
+
 Outputs:
   DynamoDBTableName:
     Description: Name of the DynamoDB table
@@ -300,4 +444,13 @@ Outputs:
     Value: !GetAtt BoxScoreFunction.Arn
   ApiEndpoint:
     Description: API Gateway endpoint URL
-    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment} 
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+  RedisEndpoint:
+    Description: Redis cluster endpoint
+    Value: !GetAtt RedisCluster.RedisEndpoint.Address
+  RedisPort:
+    Description: Redis port
+    Value: !GetAtt RedisCluster.RedisEndpoint.Port
+  MSKBrokers:
+    Description: MSK broker endpoints
+    Value: !GetAtt MSKCluster.BootstrapBrokerString 

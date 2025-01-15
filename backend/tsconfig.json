@@ -14,11 +14,21 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ],
+    "types": [
+      "node",
+      "jest",
+      "mime"
+    ]
   },
   "include": [
     "src/**/*",
-    "infrastructure/**/*"
+    "infrastructure/**/*",
+    "src/types/env.d.ts"
   ],
   "exclude": [
     "node_modules",
