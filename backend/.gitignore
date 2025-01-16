@@ -8,12 +8,21 @@
 /.pnp
 .pnp.js
 
+
 # Testing
 /coverage
 
 # Production
 /build
 /dist
+
+# Infrastructure
+/infrastructure/lambda/src
+/infrastructure/terraform/.terraform/
+/infrastructure/terraform/terraform.log
+/infrastructure/terraform/.terraform.lock.hcl
+/infrastructure/terraform/terraform.tfstate
+/infrastructure/terraform/terraform.tfstate.backup
 
 # Logs
 logs
@@ -39,3 +48,7 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db 
+
+# Lambda build artifacts
+/infrastructure/lambda/dist/**
+!/infrastructure/lambda/dist/.gitkeep 
