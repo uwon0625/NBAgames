@@ -1,5 +1,7 @@
 param (
-    [switch]$SkipLambdaPackaging
+    [switch]$SkipLambdaPackaging,
+    [switch]$Destroy,
+    [switch]$CleanupSecurityGroups
 )
 
 # Enable strict mode and stop on errors
@@ -33,7 +35,104 @@ function Remove-TerraformLock {
     terraform force-unlock -force $lockId
 }
 
+function Remove-SecurityGroup {
+    param (
+        [string]$sgId
+    )
+    
+    Write-Host "Attempting to force delete security group $sgId..." -ForegroundColor Yellow
+    
+    try {
+        # First, delete the Lambda functions that might be using the ENIs
+        Write-Host "Deleting Lambda functions first..."
+        aws lambda delete-function --function-name nba-live-gameUpdateHandler-dev
+        aws lambda delete-function --function-name nba-live-boxScoreHandler-dev
+    } catch {
+        Write-Host "Lambda functions might already be deleted, continuing..." -ForegroundColor Yellow
+    }
+    
+    # Wait a bit for Lambda to clean up its ENIs
+    Write-Host "Waiting for Lambda ENIs to be cleaned up..."
+    Start-Sleep -Seconds 30
+    
+    # Remove all security group rules first
+    try {
+        Write-Host "Removing security group rules..."
+        $rules = aws ec2 describe-security-group-rules --filters "Name=group-id,Values=$sgId" | ConvertFrom-Json
+        foreach ($rule in $rules.SecurityGroupRules) {
+            if ($rule.IsEgress) {
+                aws ec2 revoke-security-group-egress --group-id $sgId --security-group-rule-ids $rule.SecurityGroupRuleId
+            } else {
+                aws ec2 revoke-security-group-ingress --group-id $sgId --security-group-rule-ids $rule.SecurityGroupRuleId
+            }
+        }
+    } catch {
+        Write-Host "Failed to remove security group rules, continuing..." -ForegroundColor Yellow
+    }
+    
+    # List network interfaces using this security group
+    $enis = aws ec2 describe-network-interfaces --filters "Name=group-id,Values=$sgId" | ConvertFrom-Json
+    
+    if ($enis.NetworkInterfaces) {
+        Write-Host "Found network interfaces using security group. Detaching..." -ForegroundColor Yellow
+        foreach ($eni in $enis.NetworkInterfaces) {
+            if ($eni.Attachment) {
+                Write-Host "Detaching ENI $($eni.NetworkInterfaceId)..."
+                aws ec2 detach-network-interface --attachment-id $eni.Attachment.AttachmentId --force
+                
+                # Wait for detachment to complete
+                Start-Sleep -Seconds 10
+            }
+            Write-Host "Deleting ENI $($eni.NetworkInterfaceId)..."
+            aws ec2 delete-network-interface --network-interface-id $eni.NetworkInterfaceId
+        }
+    }
+}
+
+if ($CleanupSecurityGroups) {
+    Write-Host "Cleaning up security groups..." -ForegroundColor Yellow
+    & "$PSScriptRoot/cleanup-security-groups.ps1"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Security group cleanup failed"
+    }
+}
+
 try {
+    if ($Destroy) {
+        Write-Host "Destroying existing infrastructure..." -ForegroundColor Yellow
+        Push-Location "$PSScriptRoot/../terraform"
+        try {
+            # First attempt normal destroy
+            $destroyOutput = terraform destroy -auto-approve 2>&1 | Tee-Object -Append $logFile
+            
+            # Check if security group is stuck
+            if ($destroyOutput -match "aws_security_group\.lambda: Still destroying... \[id=([^\]]+)\]") {
+                $sgId = $matches[1]
+                Write-Host "Security group deletion is stuck. Attempting cleanup..." -ForegroundColor Yellow
+                
+                # Force cleanup security group
+                Remove-SecurityGroup -sgId $sgId
+                
+                # Retry destroy
+                Write-Host "Retrying terraform destroy..." -ForegroundColor Yellow
+                terraform destroy -auto-approve 2>&1 | Tee-Object -Append $logFile
+            }
+            
+            if ($LASTEXITCODE -ne 0) {
+                throw "Terraform destroy failed. Check $logFile for details."
+            }
+            Write-Host "Infrastructure destroyed successfully" -ForegroundColor Green
+            
+            # If only destroying, exit here
+            if (-not $PSBoundParameters.ContainsKey('SkipLambdaPackaging')) {
+                return
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
     # Package Lambda functions unless skipped
     if ($SkipLambdaPackaging) {
         Write-Host "Skipping Lambda packaging, using existing packages..." -ForegroundColor Yellow

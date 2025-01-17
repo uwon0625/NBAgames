@@ -21,9 +21,26 @@ logger.info('Environment:', {
   NODE_ENV: process.env.NODE_ENV
 });
 
+// We should check USE_LOCAL_SERVICES and USE_MSK before connecting to Kafka
+const useLocalServices = process.env.USE_LOCAL_SERVICES === 'true';
+const useMsk = process.env.USE_MSK === 'true';
+
+// Use these variables to determine which Kafka brokers to connect to
+const kafkaBrokers = process.env.KAFKA_BROKERS?.split(',') || [];
+if (!kafkaBrokers.length) {
+  throw new Error('KAFKA_BROKERS environment variable is required');
+}
+
+// Add logging to debug connection issues
+logger.info(`Connecting to Kafka with settings:
+  USE_LOCAL_SERVICES: ${useLocalServices}
+  USE_MSK: ${useMsk}
+  KAFKA_BROKERS: ${kafkaBrokers.join(',')}
+`);
+
 const kafka = new Kafka({
   clientId: 'nba-live-producer',
-  brokers: (process.env.KAFKA_BROKERS || '').split(','),
+  brokers: kafkaBrokers,
   ssl: true
 });
 

@@ -1,0 +1,26 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:CreateRole",
+                "iam:DeleteRole",
+                "iam:GetRole",
+                "iam:PutRolePolicy",
+                "iam:DeleteRolePolicy",
+                "iam:ListRolePolicies",
+                "iam:ListInstanceProfilesForRole",
+                "iam:PassRole"
+            ],
+            "Resource": "arn:aws:iam::886436930781:role/nba-live-*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "iam:ListInstanceProfilesForRole"
+            ],
+            "Resource": "*"
+        }
+    ]
+} 

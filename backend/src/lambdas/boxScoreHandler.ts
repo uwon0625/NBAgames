@@ -5,10 +5,34 @@ import { logger } from '../config/logger';
 import { transformNBABoxScore } from '../services/nbaService';
 import { GameStatus } from '../types/enums';
 
+// Log environment variables (excluding sensitive data)
+logger.info('Environment:', {
+  NBA_BASE_URL: process.env.NBA_BASE_URL,
+  KAFKA_TOPIC: process.env.KAFKA_TOPIC,
+  NODE_ENV: process.env.NODE_ENV
+});
+
+// Check USE_LOCAL_SERVICES and USE_MSK before connecting to Kafka
+const useLocalServices = process.env.USE_LOCAL_SERVICES === 'true';
+const useMsk = process.env.USE_MSK === 'true';
+
+// Use these variables to determine which Kafka brokers to connect to
+const kafkaBrokers = process.env.KAFKA_BROKERS?.split(',') || [];
+if (!kafkaBrokers.length) {
+  throw new Error('KAFKA_BROKERS environment variable is required');
+}
+
+// Add logging to debug connection issues
+logger.info(`Connecting to Kafka with settings:
+  USE_LOCAL_SERVICES: ${useLocalServices}
+  USE_MSK: ${useMsk}
+  KAFKA_BROKERS: ${kafkaBrokers.join(',')}
+`);
+
 const kafka = new Kafka({
-  clientId: 'nba-live-boxscore-producer',
-  brokers: (process.env.KAFKA_BROKERS || '').split(','),
-  ssl: true,
+  clientId: 'nba-live-consumer',
+  brokers: kafkaBrokers,
+  ssl: true
 });
 
 interface BoxScoreEvent {

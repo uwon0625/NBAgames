@@ -98,8 +98,16 @@ export const mockBoxScore = { game: null };
             $zipDir = Join-Path $tempDir "zip"
             New-Item -ItemType Directory -Force -Path $zipDir | Out-Null
 
-            # Copy compiled JS files and node_modules to zip directory
-            Copy-Item -Path (Join-Path $tempDir "dist/*") -Destination $zipDir -Recurse
+            # Copy compiled JS files to root of zip
+            Get-ChildItem -Path (Join-Path $tempDir "dist/lambdas") -Filter "$functionName.js" | 
+                Copy-Item -Destination $zipDir -Force
+            
+            # Copy other compiled files maintaining directory structure
+            Copy-Item -Path (Join-Path $tempDir "dist/services") -Destination (Join-Path $zipDir "services") -Recurse -Force
+            Copy-Item -Path (Join-Path $tempDir "dist/types") -Destination (Join-Path $zipDir "types") -Recurse -Force
+            Copy-Item -Path (Join-Path $tempDir "dist/config") -Destination (Join-Path $zipDir "config") -Recurse -Force
+            
+            # Copy node_modules
             Copy-Item -Path (Join-Path $tempDir "node_modules") -Destination $zipDir -Recurse -Force
 
             # Create the final zip file
@@ -136,4 +144,4 @@ try {
 } catch {
     Write-Error $_.Exception.Message
     exit 1
-} 
+}
