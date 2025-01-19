@@ -62,11 +62,12 @@ module "lambda_security_group" {
   tags = local.common_tags
 }
 
+# Lambda functions
 resource "aws_lambda_function" "game_update_handler" {
   filename         = "../lambda/dist/lambdas/gameUpdateHandler.zip"
   function_name    = "${var.project_name}-game-update-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "src/lambdas/gameUpdateHandler.handler"
+  handler         = "dist/lambdas/gameUpdateHandler.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
@@ -74,15 +75,21 @@ resource "aws_lambda_function" "game_update_handler" {
   environment {
     variables = {
       ENVIRONMENT = var.environment
-      KAFKA_BROKERS = var.use_local_services ? "localhost:9092" : (
-        var.use_msk ? aws_msk_cluster.nba_live[0].bootstrap_brokers_tls : ""
-      )
-      REDIS_ENDPOINT = var.use_local_services ? "localhost:6379" : (
-        var.use_elasticache ? "${aws_elasticache_cluster.nba_live[0].cache_nodes[0].address}:${aws_elasticache_cluster.nba_live[0].cache_nodes[0].port}" : ""
-      )
+      SQS_QUEUE_URL = aws_sqs_queue.game_updates.url
+      USE_MSK = tostring(var.use_msk)
+      USE_SQS = "true"
       DYNAMODB_TABLE_NAME = aws_dynamodb_table.games.name
       USE_LOCAL_SERVICES = tostring(var.use_local_services)
-      USE_MSK = tostring(var.use_msk)
+      NBA_BASE_URL = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
+      NODE_ENV = var.environment
+      KAFKA_TOPIC = "nba-game-updates"
+      KAFKA_BROKERS = var.use_msk ? join(",", local.msk_brokers) : var.kafka_brokers
+      DEBUG_RAW_MSK = jsonencode({
+        enabled = var.use_msk
+        brokers = var.use_msk ? local.msk_brokers : []
+        clientId = var.kafka_client_id
+        groupId = var.kafka_group_id
+      })
     }
   }
 
@@ -93,16 +100,22 @@ resource "aws_lambda_function" "game_update_handler" {
 
   depends_on = [
     aws_iam_role_policy.lambda_policy,
-    aws_dynamodb_table.games,
-    module.lambda_security_group
+    aws_iam_role_policy_attachment.lambda_basic,
+    aws_iam_role_policy_attachment.lambda_vpc,
+    aws_cloudwatch_log_group.game_update_handler
   ]
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
 }
 
 resource "aws_lambda_function" "box_score_handler" {
   filename         = "../lambda/dist/lambdas/boxScoreHandler.zip"
   function_name    = "${var.project_name}-box-score-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "src/lambdas/boxScoreHandler.handler"
+  handler         = "dist/lambdas/boxScoreHandler.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
@@ -110,15 +123,13 @@ resource "aws_lambda_function" "box_score_handler" {
   environment {
     variables = {
       ENVIRONMENT = var.environment
-      KAFKA_BROKERS = var.use_local_services ? "localhost:9092" : (
-        var.use_msk ? aws_msk_cluster.nba_live[0].bootstrap_brokers_tls : ""
-      )
-      REDIS_ENDPOINT = var.use_local_services ? "localhost:6379" : (
-        var.use_elasticache ? "${aws_elasticache_cluster.nba_live[0].cache_nodes[0].address}:${aws_elasticache_cluster.nba_live[0].cache_nodes[0].port}" : ""
-      )
+      SQS_QUEUE_URL = aws_sqs_queue.game_updates.url
+      USE_MSK = tostring(var.use_msk)
+      USE_SQS = "true"
       DYNAMODB_TABLE_NAME = aws_dynamodb_table.games.name
       USE_LOCAL_SERVICES = tostring(var.use_local_services)
-      USE_MSK = tostring(var.use_msk)
+      NBA_BASE_URL = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
+      NODE_ENV = var.environment
     }
   }
 
@@ -129,9 +140,15 @@ resource "aws_lambda_function" "box_score_handler" {
 
   depends_on = [
     aws_iam_role_policy.lambda_policy,
-    aws_dynamodb_table.games,
-    module.lambda_security_group
+    aws_iam_role_policy_attachment.lambda_basic,
+    aws_iam_role_policy_attachment.lambda_vpc,
+    aws_cloudwatch_log_group.box_score_handler
   ]
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
 }
 
 data "aws_msk_cluster" "nba_live" {
@@ -144,4 +161,38 @@ data "aws_elasticache_cluster" "nba_live" {
   count            = var.use_elasticache ? 1 : 0
   cluster_id       = aws_elasticache_cluster.nba_live[0].cluster_id
   depends_on = [aws_elasticache_cluster.nba_live]
+}
+
+resource "aws_security_group_rule" "lambda_to_redis" {
+  count = var.use_elasticache ? 1 : 0
+
+  type                     = "egress"
+  from_port               = 6379
+  to_port                 = 6379
+  protocol                = "tcp"
+  source_security_group_id = aws_security_group.redis[0].id
+  security_group_id       = module.lambda_security_group.security_group_id
+}
+
+resource "aws_security_group_rule" "lambda_to_msk" {
+  count = var.use_msk ? 1 : 0
+
+  type                     = "egress"
+  from_port               = 9092
+  to_port                 = 9092
+  protocol                = "tcp"
+  source_security_group_id = aws_security_group.msk[0].id
+  security_group_id       = module.lambda_security_group.security_group_id
+}
+
+# Add SQS trigger for box score handler
+resource "aws_lambda_event_source_mapping" "box_score_sqs" {
+  event_source_arn = aws_sqs_queue.game_updates.arn
+  function_name    = aws_lambda_function.box_score_handler.arn
+  batch_size       = 10
+  enabled          = true
+
+  depends_on = [
+    aws_iam_role_policy.lambda_policy
+  ]
 }

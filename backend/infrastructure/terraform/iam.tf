@@ -15,45 +15,33 @@ resource "aws_iam_role" "lambda_role" {
     ]
   })
 
-  tags = local.common_tags
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
 }
 
-# Basic Lambda execution policy
+# Lambda basic execution policy
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-  role       = aws_iam_role.lambda_role.name
 }
 
-# VPC execution policy for Lambda
+# Lambda VPC execution policy
 resource "aws_iam_role_policy_attachment" "lambda_vpc" {
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
   role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-# Custom policy for Lambda to access other AWS services
+# Custom policy for Lambda functions
 resource "aws_iam_role_policy" "lambda_policy" {
   name = "${var.project_name}-lambda-policy-${var.environment}"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = concat([
+    Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:Query",
-          "dynamodb:Scan"
-        ]
-        Resource = [
-          aws_dynamodb_table.games.arn,
-          "${aws_dynamodb_table.games.arn}/index/*"
-        ]
-      }],
-      # Add SQS permissions if using SQS
-      (!var.use_msk && var.use_sqs_instead_of_msk) ? [{
         Effect = "Allow"
         Action = [
           "sqs:SendMessage",
@@ -61,24 +49,30 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ]
-        Resource = aws_sqs_queue.game_updates[0].arn
-      }] : [],
-      # Add MSK permissions if using MSK
-      var.use_msk ? [{
+        Resource = [aws_sqs_queue.game_updates.arn]
+      },
+      {
         Effect = "Allow"
         Action = [
-          "kafka-cluster:Connect",
-          "kafka-cluster:CreateTopic",
-          "kafka-cluster:DescribeTopic",
-          "kafka-cluster:WriteData",
-          "kafka-cluster:ReadData"
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
         ]
-        Resource = [
-          aws_msk_cluster.nba_live[0].arn,
-          "${aws_msk_cluster.nba_live[0].arn}/*"
+        Resource = [aws_dynamodb_table.games.arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
         ]
-      }] : []
-    )
+        Resource = ["arn:aws:logs:*:*:*"]
+      }
+    ]
   })
 }
 
@@ -89,4 +83,26 @@ resource "aws_lambda_permission" "eventbridge" {
   function_name = aws_lambda_function.game_update_handler.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.score_update.arn
+}
+
+# Add SQS permissions to the Lambda policy
+resource "aws_iam_role_policy" "lambda_sqs" {
+  name = "${var.project_name}-lambda-sqs-${var.environment}"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage",
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes"
+        ]
+        Resource = aws_sqs_queue.game_updates.arn
+      }
+    ]
+  })
 } 

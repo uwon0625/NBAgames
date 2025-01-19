@@ -34,34 +34,26 @@ resource "aws_security_group" "this" {
   name        = var.name
   description = var.description
   vpc_id      = var.vpc_id
-  tags        = var.tags
-
-  # Start with a default egress rule
-  egress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
-    description      = "Default egress rule"
-  }
-
+  
+  # Remove inline egress rules - we'll use aws_security_group_rule instead
   lifecycle {
     create_before_destroy = true
   }
+
+  tags = var.tags
 }
 
-# Create egress rules separately
 resource "aws_security_group_rule" "egress" {
   count = length(var.egress_rules)
 
   type              = "egress"
   security_group_id = aws_security_group.this.id
   
-  from_port         = var.egress_rules[count.index].from_port
-  to_port           = var.egress_rules[count.index].to_port
-  protocol          = var.egress_rules[count.index].protocol
-  cidr_blocks       = [var.egress_rules[count.index].cidr_blocks]
-  description       = var.egress_rules[count.index].description
+  from_port   = var.egress_rules[count.index].from_port
+  to_port     = var.egress_rules[count.index].to_port
+  protocol    = var.egress_rules[count.index].protocol
+  cidr_blocks = [var.egress_rules[count.index].cidr_blocks]
+  description = var.egress_rules[count.index].description
 }
 
 output "security_group_id" {

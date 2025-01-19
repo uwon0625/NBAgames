@@ -1,33 +1,36 @@
 # Only create if MSK is disabled and SQS is enabled
 resource "aws_sqs_queue" "game_updates" {
-  count = (!var.use_msk && var.use_sqs_instead_of_msk) ? 1 : 0
+  name                        = "${var.project_name}-updates-${var.environment}.fifo"
+  fifo_queue                  = true
+  content_based_deduplication = true
+  deduplication_scope        = "messageGroup"
+  fifo_throughput_limit      = "perMessageGroupId"
+  message_retention_seconds   = 86400  # 24 hours
+  visibility_timeout_seconds  = 30
   
-  name                      = "${var.project_name}-game-updates-${var.environment}"
-  message_retention_seconds = 86400  # 24 hours
-  visibility_timeout_seconds = 30
-  
-  tags = local.common_tags
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
 }
 
+# Update the queue policy to be more permissive for testing
 resource "aws_sqs_queue_policy" "game_updates" {
-  count     = (!var.use_msk && var.use_sqs_instead_of_msk) ? 1 : 0
-  queue_url = aws_sqs_queue.game_updates[0].id
+  queue_url = aws_sqs_queue.game_updates.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
+        Principal = "*"
         Action = [
           "sqs:SendMessage",
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ]
-        Resource = aws_sqs_queue.game_updates[0].arn
+        Resource = aws_sqs_queue.game_updates.arn
       }
     ]
   })

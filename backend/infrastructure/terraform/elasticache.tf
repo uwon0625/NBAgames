@@ -7,7 +7,7 @@ resource "aws_elasticache_cluster" "nba_live" {
   num_cache_nodes     = 1
   parameter_group_name = "default.redis7"
   port                = 6379
-  security_group_ids  = [aws_security_group.redis.id]
+  security_group_ids  = [aws_security_group.redis[0].id]
   subnet_group_name   = aws_elasticache_subnet_group.nba_live.name
 
   tags = {
@@ -22,6 +22,8 @@ resource "aws_elasticache_subnet_group" "nba_live" {
 }
 
 resource "aws_security_group" "redis" {
+  count = var.use_elasticache ? 1 : 0
+  
   name        = "${var.project_name}-redis-sg-${var.environment}"
   description = "Security group for Redis cluster"
   vpc_id      = var.vpc_id
@@ -38,5 +40,10 @@ resource "aws_security_group" "redis" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
   }
 }

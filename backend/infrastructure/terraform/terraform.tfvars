@@ -32,4 +32,9 @@ redis_node_type = "cache.t3.micro"        # Smallest Redis instance
 use_local_services = true    # Use Docker Compose services
 use_msk = false             # Don't deploy MSK
 use_elasticache = false     # Don't deploy ElastiCache
-use_sqs_instead_of_msk = false  # Don't use SQS in development
+use_sqs_instead_of_msk = true  # Don't use SQS in development
+
+# Add these Kafka-related settings
+kafka_brokers = "localhost:9092"
+kafka_client_id = "nba-game-updates"
+kafka_group_id = "nba-updates-group"

@@ -21,3 +21,8 @@ output "lambda_functions" {
     box_score   = aws_lambda_function.box_score_handler.function_name
   }
 }
+
+output "sqs_queue_url" {
+  description = "The URL of the SQS queue"
+  value       = aws_sqs_queue.game_updates.url
+}

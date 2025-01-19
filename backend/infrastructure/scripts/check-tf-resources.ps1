@@ -4,81 +4,102 @@ param (
     [switch]$cleanup
 )
 
-function Write-ResourceStatus {
-    param (
-        [string]$resourceType,
-        [array]$resources,
-        [string]$color = "White"
-    )
-    Write-Host "`n[$resourceType]" -ForegroundColor $color
-    if ($resources.Count -eq 0) {
-        Write-Host "  No resources found" -ForegroundColor Gray
-    } else {
-        $resources | ForEach-Object {
-            Write-Host "  - $($_.Id)" -ForegroundColor $color
-            if ($_.Name) { Write-Host "    Name: $($_.Name)" -ForegroundColor Gray }
-            if ($_.Arn) { Write-Host "    ARN: $($_.Arn)" -ForegroundColor Gray }
-        }
-    }
+# AWS CLI check commands for reference
+# aws ec2 describe-security-groups --region $REGION --query 'SecurityGroups[].[GroupName,GroupId]' --output table
+# aws events list-rules --query 'Rules[].[Name,EventBusName]' --output table
+# aws elasticache describe-replication-groups --query 'ReplicationGroups[].[ReplicationGroupId,NodeGroupCount]' --output table
+# aws dynamodb list-tables --query 'TableNames' --output table
+# aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,InstanceType,State.Name]' --output table
+# aws rds describe-db-instances --query 'DBInstances[].[DBInstanceIdentifier,DBInstanceClass,Engine]' --output table
+# aws kafka list-clusters --query 'ClusterInfoList[].[ClusterName,ClusterArn,State]' --output table
+# aws s3 ls
+# aws lambda list-functions --query 'Functions[].[FunctionName,Description,LoggingConfig.LogGroup]' --output table
+# aws cloudformation describe-stacks --query 'Stacks[].[StackName,StackStatus]' --output table
+
+function Write-Header {
+    param ([string]$title)
+    Write-Host "`n=== $title ===" -ForegroundColor Cyan
 }
 
 try {
-    Write-Host "Checking AWS resources for project: $projectName-$environment" -ForegroundColor Cyan
+    Write-Host "Checking AWS resources for project: $projectName-$environment`n" -ForegroundColor Cyan
     
-    # 1. Check Lambda Functions (they reference most other resources)
-    $lambdas = aws lambda list-functions | ConvertFrom-Json
-    $projectLambdas = $lambdas.Functions | Where-Object {
-        $_.FunctionName -like "$projectName-*-$environment"
+    # 1. Lambda Functions
+    Write-Header "Lambda Functions"
+    aws lambda list-functions `
+        --query "Functions[?contains(FunctionName, '$projectName-') && contains(FunctionName, '-$environment')].[FunctionName,Description,LoggingConfig.LogGroup]" `
+        --output table
+
+    # 2. Security Groups
+    Write-Header "Security Groups"
+    aws ec2 describe-security-groups `
+        --query "SecurityGroups[?contains(GroupName, '$projectName-') && contains(GroupName, '-$environment')].[GroupName,GroupId,VpcId]" `
+        --output table
+
+    # 3. DynamoDB Tables
+    Write-Header "DynamoDB Tables"
+    $tables = aws dynamodb list-tables --query "TableNames[?contains(@, '$projectName-') && contains(@, '-$environment')]" --output text
+    if ($tables) {
+        foreach ($table in $tables.Split()) {
+            aws dynamodb describe-table `
+                --table-name $table `
+                --query "Table.[TableName,TableStatus,TableArn]" `
+                --output table
+        }
+    } else {
+        Write-Host "No DynamoDB tables found" -ForegroundColor Gray
     }
-    Write-ResourceStatus "Lambda Functions" $projectLambdas "Yellow"
-    
-    # 2. Check Security Groups (often cause issues)
-    $sgs = aws ec2 describe-security-groups | ConvertFrom-Json
-    $projectSGs = $sgs.SecurityGroups | Where-Object {
-        $_.GroupName -like "$projectName-*-$environment*"
-    }
-    Write-ResourceStatus "Security Groups" $projectSGs "Yellow"
-    
-    # 3. Check ENIs attached to Security Groups
-    foreach ($sg in $projectSGs) {
-        $enis = aws ec2 describe-network-interfaces --filters "Name=group-id,Values=$($sg.GroupId)" | ConvertFrom-Json
-        Write-ResourceStatus "Network Interfaces for SG $($sg.GroupId)" $enis.NetworkInterfaces "Magenta"
-    }
-    
-    # 4. Check IAM Roles and Policies
-    $roles = aws iam list-roles | ConvertFrom-Json
-    $projectRoles = $roles.Roles | Where-Object {
-        $_.RoleName -like "$projectName-*-$environment*"
-    }
-    Write-ResourceStatus "IAM Roles" $projectRoles "Green"
-    
-    # 5. Check DynamoDB Tables
-    $tables = aws dynamodb list-tables | ConvertFrom-Json
-    $projectTables = $tables.TableNames | Where-Object {
-        $_ -like "$projectName-*-$environment*"
-    }
-    Write-ResourceStatus "DynamoDB Tables" $projectTables "Blue"
-    
-    # 6. Check MSK Clusters
-    $msks = aws kafka list-clusters | ConvertFrom-Json
-    $projectMSKs = $msks.ClusterInfoList | Where-Object {
-        $_.ClusterName -like "$projectName-*-$environment*"
-    }
-    Write-ResourceStatus "MSK Clusters" $projectMSKs "Cyan"
-    
-    # 7. Check ElastiCache Clusters
-    $caches = aws elasticache describe-cache-clusters | ConvertFrom-Json
-    $projectCaches = $caches.CacheClusters | Where-Object {
-        $_.CacheClusterId -like "$projectName-*-$environment*"
-    }
-    Write-ResourceStatus "ElastiCache Clusters" $projectCaches "DarkYellow"
-    
-    # 8. Check CloudWatch Log Groups
-    $logGroups = aws logs describe-log-groups | ConvertFrom-Json
-    $projectLogGroups = $logGroups.LogGroups | Where-Object {
-        $_.LogGroupName -like "/aws/lambda/$projectName-*-$environment*"
-    }
-    Write-ResourceStatus "CloudWatch Log Groups" $projectLogGroups "DarkCyan"
+
+    # 4. CloudWatch Log Groups
+    Write-Header "CloudWatch Log Groups"
+    aws logs describe-log-groups `
+        --query "logGroups[?contains(logGroupName, '/aws/lambda/$projectName-') && contains(logGroupName, '-$environment')].[logGroupName,retentionInDays]" `
+        --output table
+
+    # 5. IAM Roles
+    Write-Header "IAM Roles"
+    aws iam list-roles `
+        --query "Roles[?contains(RoleName, '$projectName-') && contains(RoleName, '-$environment')].[RoleName,Arn,CreateDate]" `
+        --output table
+
+    # 6. EventBridge Rules
+    Write-Header "EventBridge Rules"
+    aws events list-rules `
+        --query "Rules[?contains(Name, '$projectName-') && contains(Name, '-$environment')].[Name,ScheduleExpression,State]" `
+        --output table
+
+    # 7. MSK Clusters
+    Write-Header "MSK Clusters"
+    aws kafka list-clusters `
+        --query "ClusterInfoList[?contains(ClusterName, '$projectName-') && contains(ClusterName, '-$environment')].[ClusterName,State]" `
+        --output table
+
+    # 8. ElastiCache Clusters
+    Write-Header "ElastiCache Clusters"
+    aws elasticache describe-cache-clusters `
+        --query "CacheClusters[?contains(CacheClusterId, '$projectName-') && contains(CacheClusterId, '-$environment')].[CacheClusterId,CacheNodeType,Engine]" `
+        --output table
+
+    # 9. SQS Queues
+    Write-Header "SQS Queues"
+    aws sqs list-queues `
+        --queue-name-prefix "$projectName-" `
+        --query "QueueUrls[?contains(@, '$projectName-') && contains(@, '-$environment')]" `
+        --output text | ForEach-Object {
+            if ($_) {
+                $queueUrl = $_
+                aws sqs get-queue-attributes `
+                    --queue-url $queueUrl `
+                    --attribute-names All `
+                    --query "[
+                        QueueUrl,
+                        Attributes.QueueArn,
+                        Attributes.ApproximateNumberOfMessages,
+                        Attributes.CreatedTimestamp
+                    ]" `
+                    --output table
+            }
+        }
 
     if ($cleanup) {
         Write-Host "`nWould you like to clean up these resources? (y/n)" -ForegroundColor Red
@@ -86,29 +107,54 @@ try {
         if ($confirm -eq 'y') {
             Write-Host "`nCleaning up resources..." -ForegroundColor Red
             
+            # Add SQS cleanup before Lambda cleanup
+            aws sqs list-queues `
+                --queue-name-prefix "$projectName-" `
+                --query "QueueUrls[?contains(@, '$projectName-') && contains(@, '-$environment')]" `
+                --output text | ForEach-Object {
+                    if ($_) {
+                        Write-Host "Deleting SQS queue: $_" -ForegroundColor Yellow
+                        aws sqs delete-queue --queue-url $_
+                    }
+                }
+
             # Clean up in reverse order of creation
-            foreach ($lg in $projectLogGroups) {
-                Write-Host "Deleting log group: $($lg.LogGroupName)" -ForegroundColor Yellow
-                aws logs delete-log-group --log-group-name $lg.LogGroupName
-            }
+            # Log Groups
+            aws logs describe-log-groups `
+                --query "logGroups[?contains(logGroupName, '/aws/lambda/$projectName-') && contains(logGroupName, '-$environment')].logGroupName" `
+                --output text | ForEach-Object {
+                    if ($_) {
+                        Write-Host "Deleting log group: $_" -ForegroundColor Yellow
+                        aws logs delete-log-group --log-group-name $_
+                    }
+                }
             
-            foreach ($lambda in $projectLambdas) {
-                Write-Host "Deleting lambda: $($lambda.FunctionName)" -ForegroundColor Yellow
-                aws lambda delete-function --function-name $lambda.FunctionName
-            }
+            # Lambda Functions
+            aws lambda list-functions `
+                --query "Functions[?contains(FunctionName, '$projectName-') && contains(FunctionName, '-$environment')].FunctionName" `
+                --output text | ForEach-Object {
+                    if ($_) {
+                        Write-Host "Deleting lambda: $_" -ForegroundColor Yellow
+                        aws lambda delete-function --function-name $_
+                    }
+                }
             
-            # Run the security group cleanup script
+            # Run security group cleanup script
             Write-Host "Cleaning up security groups..." -ForegroundColor Yellow
             & "$PSScriptRoot/cleanup-security-groups.ps1" -projectName $projectName -environment $environment
             
-            foreach ($role in $projectRoles) {
-                Write-Host "Cleaning up role: $($role.RoleName)" -ForegroundColor Yellow
-                $policies = aws iam list-role-policies --role-name $role.RoleName | ConvertFrom-Json
-                foreach ($policy in $policies.PolicyNames) {
-                    aws iam delete-role-policy --role-name $role.RoleName --policy-name $policy
+            # IAM Roles
+            aws iam list-roles `
+                --query "Roles[?contains(RoleName, '$projectName-') && contains(RoleName, '-$environment')].RoleName" `
+                --output text | ForEach-Object {
+                    if ($_) {
+                        Write-Host "Cleaning up role: $_" -ForegroundColor Yellow
+                        aws iam list-role-policies --role-name $_ --output text | ForEach-Object {
+                            aws iam delete-role-policy --role-name $_ --policy-name $_
+                        }
+                        aws iam delete-role --role-name $_
+                    }
                 }
-                aws iam delete-role --role-name $role.RoleName
-            }
             
             Write-Host "Resource cleanup completed" -ForegroundColor Green
         }

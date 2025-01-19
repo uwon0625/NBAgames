@@ -98,151 +98,41 @@ if ($CleanupSecurityGroups) {
 }
 
 try {
-    if ($Destroy) {
-        Write-Host "Destroying existing infrastructure..." -ForegroundColor Yellow
-        Push-Location "$PSScriptRoot/../terraform"
-        try {
-            # First attempt normal destroy
-            $destroyOutput = terraform destroy -auto-approve 2>&1 | Tee-Object -Append $logFile
-            
-            # Check if security group is stuck
-            if ($destroyOutput -match "aws_security_group\.lambda: Still destroying... \[id=([^\]]+)\]") {
-                $sgId = $matches[1]
-                Write-Host "Security group deletion is stuck. Attempting cleanup..." -ForegroundColor Yellow
-                
-                # Force cleanup security group
-                Remove-SecurityGroup -sgId $sgId
-                
-                # Retry destroy
-                Write-Host "Retrying terraform destroy..." -ForegroundColor Yellow
-                terraform destroy -auto-approve 2>&1 | Tee-Object -Append $logFile
-            }
-            
-            if ($LASTEXITCODE -ne 0) {
-                throw "Terraform destroy failed. Check $logFile for details."
-            }
-            Write-Host "Infrastructure destroyed successfully" -ForegroundColor Green
-            
-            # If only destroying, exit here
-            if (-not $PSBoundParameters.ContainsKey('SkipLambdaPackaging')) {
-                return
-            }
-        }
-        finally {
-            Pop-Location
-        }
-    }
-
-    # Package Lambda functions unless skipped
-    if ($SkipLambdaPackaging) {
-        Write-Host "Skipping Lambda packaging, using existing packages..." -ForegroundColor Yellow
-        
-        # Verify that Lambda packages exist
-        $requiredLambdas = @(
-            "gameUpdateHandler.zip",
-            "boxScoreHandler.zip"
-        )
-        
-        $lambdaDir = Join-Path $PSScriptRoot "../lambda/dist/lambdas"
-        foreach ($lambda in $requiredLambdas) {
-            $lambdaPath = Join-Path $lambdaDir $lambda
-            if (-not (Test-Path $lambdaPath)) {
-                throw "Required Lambda package not found: $lambdaPath. Run without -SkipLambdaPackaging to create it."
-            }
-        }
-    } else {
-        Write-Host "Packaging Lambda functions..."
-        & "$PSScriptRoot/package-lambdas.ps1"
+    # Change to terraform directory
+    Set-Location -Path (Join-Path $PSScriptRoot "..\terraform")
+    
+    if (-not $SkipLambdaPackaging) {
+        # Package Lambda functions first
+        Write-Host "Packaging Lambda functions..." -ForegroundColor Cyan
+        & (Join-Path $PSScriptRoot "package-lambdas.ps1")
         if ($LASTEXITCODE -ne 0) {
             throw "Lambda packaging failed"
         }
     }
 
-    # Run Terraform
-    Write-Host "Running Terraform..."
-    Push-Location "$PSScriptRoot/../terraform"
+    if ($Destroy) {
+        Write-Host "Destroying infrastructure..." -ForegroundColor Yellow
+        terraform destroy -auto-approve
+    } else {
+        # Initialize and apply Terraform
+        Write-Host "Initializing Terraform..." -ForegroundColor Cyan
+        terraform init
+        if ($LASTEXITCODE -ne 0) { throw "Terraform init failed" }
 
-    try {
-        # Initialize if needed
-        if (-not (Test-Path ".terraform")) {
-            Write-Host "Initializing Terraform..."
-            terraform init 2>&1 | Tee-Object -Append $logFile
-            if ($LASTEXITCODE -ne 0) {
-                throw "Terraform initialization failed. Check $logFile for details."
-            }
-        }
+        Write-Host "Planning Terraform changes..." -ForegroundColor Cyan
+        terraform plan -out=tfplan
+        if ($LASTEXITCODE -ne 0) { throw "Terraform plan failed" }
 
-        # Plan changes
-        Write-Host "Planning Terraform changes..."
-        $planOutput = terraform plan -detailed-exitcode 2>&1 | Tee-Object -Append $logFile
-        $planExitCode = $LASTEXITCODE
-
-        # Check for lock error
-        if ($planOutput -match "Error acquiring the state lock.*ID:\s+([a-f0-9-]+)") {
-            $lockId = $matches[1]
-            Write-Host "Found stale lock with ID: $lockId"
-            $confirmation = Read-Host "Would you like to remove the stale lock? (y/n)"
-            if ($confirmation -eq 'y') {
-                Remove-TerraformLock -lockId $lockId
-                # Retry the plan
-                $planOutput = terraform plan -detailed-exitcode 2>&1 | Tee-Object -Append $logFile
-                $planExitCode = $LASTEXITCODE
-            } else {
-                throw "Deployment cancelled due to state lock"
-            }
-        }
-
-        if ($planExitCode -eq 1) {
-            Write-Host "Terraform plan failed. Check $logFile for details." -ForegroundColor Red
-            Get-Content $logFile | Select-Object -Last 50
-            throw "Terraform plan failed. Full logs available in $logFile"
-        }
-
-        # Apply if there are changes
-        if ($planExitCode -eq 2) {
-            Write-Host "Changes detected. Applying..."
-            terraform apply -auto-approve 2>&1 | Tee-Object -Append $logFile
-            if ($LASTEXITCODE -ne 0) {
-                throw "Terraform apply failed. Check $logFile for details."
-            }
-        } else {
-            Write-Host "No changes to apply"
-        }
-
-        Write-Host "Deployment completed successfully" -ForegroundColor Green
+        Write-Host "Applying Terraform changes..." -ForegroundColor Cyan
+        terraform apply tfplan
+        if ($LASTEXITCODE -ne 0) { throw "Terraform apply failed" }
     }
-    finally {
-        Pop-Location
-    }
-}
-catch {
-    Write-Error "Deployment failed: $_"
-    Write-Host "Check the log file for details: $logFile" -ForegroundColor Yellow
-    
-    # Check if we're in terraform directory for rollback
-    if ((Get-Location).Path -like "*\terraform") {
-        $confirmation = Read-Host "Would you like to roll back changes? (y/n)"
-        if ($confirmation -eq 'y') {
-            Write-Host "Rolling back changes..."
-            terraform destroy -auto-approve 2>&1 | Tee-Object -Append $logFile
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error "Rollback failed! Manual intervention may be required. Check $logFile for details."
-            } else {
-                Write-Host "Rollback completed successfully" -ForegroundColor Yellow
-            }
-        } else {
-            Write-Host "Skipping rollback. Resources may be in an inconsistent state" -ForegroundColor Yellow
-        }
-    }
-    
+
+    Write-Host "Deployment completed successfully" -ForegroundColor Green
+} catch {
+    Write-Error $_.Exception.Message
     exit 1
-}
-finally {
-    # Always return to original location
+} finally {
+    # Return to original location
     Set-Location -Path $originalLocation
-    
-    # Display log file location
-    if (Test-Path $logFile) {
-        Write-Host "Terraform logs are available at: $logFile" -ForegroundColor Cyan
-    }
 } 

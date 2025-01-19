@@ -1,88 +1,79 @@
-import { Kafka } from 'kafkajs';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { SQSEvent, Context } from 'aws-lambda';
 import axios from 'axios';
-import { nbaApiConfig } from '../config/nbaApi';
-import { logger } from '../config/logger';
-import { transformNBABoxScore } from '../services/nbaService';
-import { GameStatus } from '../types/enums';
 
-// Log environment variables (excluding sensitive data)
-logger.info('Environment:', {
-  NBA_BASE_URL: process.env.NBA_BASE_URL,
-  KAFKA_TOPIC: process.env.KAFKA_TOPIC,
-  NODE_ENV: process.env.NODE_ENV
-});
+const ddbClient = new DynamoDBClient({});
+const ddb = DynamoDBDocumentClient.from(ddbClient);
 
-// Check USE_LOCAL_SERVICES and USE_MSK before connecting to Kafka
-const useLocalServices = process.env.USE_LOCAL_SERVICES === 'true';
-const useMsk = process.env.USE_MSK === 'true';
+const NBA_BASE_URL = process.env.NBA_BASE_URL || 'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData';
 
-// Use these variables to determine which Kafka brokers to connect to
-const kafkaBrokers = process.env.KAFKA_BROKERS?.split(',') || [];
-if (!kafkaBrokers.length) {
-  throw new Error('KAFKA_BROKERS environment variable is required');
-}
+export const handler = async (event: SQSEvent, context: Context) => {
+    console.log('Box Score Handler started', { 
+        requestId: context.awsRequestId,
+        eventRecords: event.Records.length,
+        environment: {
+            NBA_BASE_URL: process.env.NBA_BASE_URL,
+            DYNAMODB_TABLE_NAME: process.env.DYNAMODB_TABLE_NAME,
+            NODE_ENV: process.env.NODE_ENV
+        }
+    });
 
-// Add logging to debug connection issues
-logger.info(`Connecting to Kafka with settings:
-  USE_LOCAL_SERVICES: ${useLocalServices}
-  USE_MSK: ${useMsk}
-  KAFKA_BROKERS: ${kafkaBrokers.join(',')}
-`);
+    try {
+        for (const record of event.Records) {
+            console.log('Processing record', { messageId: record.messageId });
+            
+            try {
+                const game = JSON.parse(record.body);
+                console.log('Game data', { 
+                    gameId: game.gameId,
+                    status: game.gameStatus,
+                    homeTeam: game.homeTeam?.teamId,
+                    awayTeam: game.awayTeam?.teamId
+                });
 
-const kafka = new Kafka({
-  clientId: 'nba-live-consumer',
-  brokers: kafkaBrokers,
-  ssl: true
-});
+                // Fetch box score data
+                const boxScoreUrl = `${NBA_BASE_URL}/boxscore/boxscore_${game.gameId}.json`;
+                console.log('Fetching box score from:', boxScoreUrl);
+                
+                const response = await axios.get(boxScoreUrl);
+                
+                if (response.status === 200) {
+                    // Store in DynamoDB
+                    const params = {
+                        TableName: process.env.DYNAMODB_TABLE_NAME,
+                        Item: {
+                            gameId: game.gameId,
+                            ...game,
+                            boxScore: response.data,
+                            updatedAt: new Date().toISOString(),
+                            lastUpdate: Date.now()
+                        }
+                    };
 
-interface BoxScoreEvent {
-  gameId: string;
-}
+                    console.log('Storing in DynamoDB', { 
+                        tableName: params.TableName,
+                        gameId: params.Item.gameId 
+                    });
 
-export async function handler(event: BoxScoreEvent) {
-  try {
-    const producer = kafka.producer();
-    await producer.connect();
+                    await ddb.send(new PutCommand(params));
+                    console.log(`Successfully processed box score for game ${game.gameId}`);
+                }
+            } catch (error) {
+                console.error('Error processing record:', { 
+                    messageId: record.messageId, 
+                    error: error instanceof Error ? error.message : String(error)
+                });
+                // Don't throw here to continue processing other messages
+            }
+        }
 
-    // Fetch box score using the shared NBA API config
-    const response = await axios.get(`${nbaApiConfig.baseUrl}/boxscore/boxscore_${event.gameId}.json`);
-    
-    if (response.status !== 200) {
-      throw new Error(`NBA API responded with status: ${response.status}`);
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ message: 'Box scores processed successfully' })
+        };
+    } catch (error) {
+        console.error('Fatal error in box score handler:', error);
+        throw error;
     }
-
-    const boxScore = transformNBABoxScore(response.data.game);
-
-    // Only publish if game is LIVE
-    if (boxScore.status === GameStatus.LIVE) {
-      await producer.send({
-        topic: process.env.KAFKA_BOXSCORE_TOPIC || 'nba-boxscore-updates',
-        messages: [{
-          key: boxScore.gameId,
-          value: JSON.stringify(boxScore),
-        }],
-      });
-      logger.info(`Published box score update for game ${boxScore.gameId}`);
-    }
-
-    await producer.disconnect();
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ 
-        message: 'Box score processed',
-        gameId: event.gameId,
-        status: boxScore.status
-      })
-    };
-  } catch (error) {
-    logger.error('Error processing box score:', error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ 
-        error: 'Failed to process box score',
-        gameId: event.gameId
-      })
-    };
-  }
-} 
+}; 

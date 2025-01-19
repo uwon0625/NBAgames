@@ -101,3 +101,23 @@ variable "use_local_services" {
   type        = bool
   default     = true  # Default to local for development
 }
+
+# Add these new variable declarations
+
+variable "kafka_brokers" {
+  description = "Comma-separated list of Kafka brokers"
+  type        = string
+  default     = "localhost:9092"
+}
+
+variable "kafka_client_id" {
+  description = "Client ID for Kafka connections"
+  type        = string
+  default     = "nba-game-updates"
+}
+
+variable "kafka_group_id" {
+  description = "Consumer group ID for Kafka"
+  type        = string
+  default     = "nba-updates-group"
+}

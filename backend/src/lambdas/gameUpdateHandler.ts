@@ -1,108 +1,167 @@
-import { Kafka } from 'kafkajs';
+import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { Handler } from 'aws-lambda';
 import axios from 'axios';
+import { Kafka, Partitioners } from 'kafkajs';
 
-// Simple logger for Lambda
-const logger = {
-  info: (message: string, ...args: any[]) => console.log(message, ...args),
-  error: (message: string, ...args: any[]) => console.error(message, ...args),
-  warn: (message: string, ...args: any[]) => console.warn(message, ...args),
-  debug: (message: string, ...args: any[]) => {
-    if (process.env.DEBUG) console.debug(message, ...args);
-  }
-};
+// Define interface for NBA game data
+interface NBAGame {
+  gameId: string;
+  gameStatus: number;
+  gameStatusText: string;
+  period: number;
+  gameClock: string;
+  homeTeam: {
+    teamId: string;
+    score: number;
+    [key: string]: any;
+  };
+  awayTeam: {
+    teamId: string;
+    score: number;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
 
-const NBA_BASE_URL = process.env.NBA_BASE_URL || 'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData';
-const NBA_API_URL = `${NBA_BASE_URL}/scoreboard/todaysScoreboard_00.json`;
+// Configuration flags
+const USE_MSK = process.env.USE_MSK === 'true';
+const USE_SQS = process.env.USE_SQS === 'true';
 
-// Log environment variables (excluding sensitive data)
-logger.info('Environment:', {
-  NBA_BASE_URL,
-  KAFKA_TOPIC: process.env.KAFKA_TOPIC,
+// Log all environment variables first
+console.info('Environment variables:', {
+  USE_MSK: process.env.USE_MSK,
+  USE_SQS: process.env.USE_SQS,
+  KAFKA_BROKERS: process.env.KAFKA_BROKERS,
+  DEBUG_RAW_MSK: process.env.DEBUG_RAW_MSK,
+  SQS_QUEUE_URL: process.env.SQS_QUEUE_URL,
   NODE_ENV: process.env.NODE_ENV
 });
 
-// We should check USE_LOCAL_SERVICES and USE_MSK before connecting to Kafka
-const useLocalServices = process.env.USE_LOCAL_SERVICES === 'true';
-const useMsk = process.env.USE_MSK === 'true';
-
-// Use these variables to determine which Kafka brokers to connect to
-const kafkaBrokers = process.env.KAFKA_BROKERS?.split(',') || [];
-if (!kafkaBrokers.length) {
-  throw new Error('KAFKA_BROKERS environment variable is required');
-}
-
-// Add logging to debug connection issues
-logger.info(`Connecting to Kafka with settings:
-  USE_LOCAL_SERVICES: ${useLocalServices}
-  USE_MSK: ${useMsk}
-  KAFKA_BROKERS: ${kafkaBrokers.join(',')}
-`);
-
-const kafka = new Kafka({
-  clientId: 'nba-live-producer',
-  brokers: kafkaBrokers,
-  ssl: true
-});
-
-const handler = async (event: any) => {
+// Parse Kafka brokers
+const parsedBrokers = (() => {
   try {
-    logger.info('Starting game update handler');
+    console.info('Raw KAFKA_BROKERS env:', typeof process.env.KAFKA_BROKERS, process.env.KAFKA_BROKERS);
     
-    const producer = kafka.producer();
-    logger.info('Connecting to Kafka...');
-    await producer.connect();
-    logger.info('Connected to Kafka');
-
-    // Fetch games directly using NBA API URL
-    logger.info('Fetching games from NBA API...');
-    const response = await axios.get(NBA_API_URL);
-    
-    if (response.status !== 200) {
-      throw new Error(`NBA API responded with status: ${response.status}`);
+    if (!process.env.KAFKA_BROKERS) {
+      console.info('No KAFKA_BROKERS environment variable found');
+      return [];
     }
 
-    const games = response.data.scoreboard.games;
-    logger.info(`Found ${games.length} games to process`);
+    // Try parsing as JSON first
+    try {
+      const brokers = JSON.parse(process.env.KAFKA_BROKERS);
+      console.info('Parsed KAFKA_BROKERS as JSON:', brokers);
+      return brokers;
+    } catch (e) {
+      // If not JSON, try splitting by comma
+      const brokers = process.env.KAFKA_BROKERS.split(',');
+      console.info('Split KAFKA_BROKERS by comma:', brokers);
+      return brokers;
+    }
+  } catch (error) {
+    console.error('Failed to process KAFKA_BROKERS:', error);
+    return [];
+  }
+})();
 
-    // Publish games to Kafka
-    await Promise.all(games.map(async (game: any) => {
+// Initialize clients
+const sqs = new SQSClient({ region: process.env.AWS_REGION });
+const NBA_BASE_URL = process.env.NBA_BASE_URL || 'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData';
+const NBA_API_URL = `${NBA_BASE_URL}/scoreboard/todaysScoreboard_00.json`;
+
+// Initialize Kafka if enabled
+const kafka = USE_MSK && parsedBrokers.length > 0 ? new Kafka({
+  clientId: 'nba-game-updates',
+  brokers: parsedBrokers,
+  retry: {
+    initialRetryTime: 100,
+    retries: 3
+  }
+}) : null;
+
+const handler: Handler = async (event, context) => {
+  console.info('Starting game update handler');
+  
+  try {
+    // Fetch games from NBA API
+    const response = await axios.get(NBA_API_URL);
+    const games = response.data.scoreboard.games as NBAGame[];
+    
+    // Try Kafka first if enabled
+    if (USE_MSK && kafka && parsedBrokers.length > 0) {
+      const producer = kafka.producer({
+        createPartitioner: Partitioners.LegacyPartitioner
+      });
+
       try {
-        await producer.send({
-          topic: process.env.KAFKA_TOPIC || 'nba-game-updates',
-          messages: [{
-            key: game.gameId,
-            value: JSON.stringify(game),
-          }],
+        console.info('Attempting Kafka connection with configuration:', {
+          brokers: parsedBrokers,
+          producer,
+          topic: 'nba-game-updates'
         });
-        logger.info(`Published update for game ${game.gameId}`);
-      } catch (error) {
-        logger.error(`Failed to publish game ${game.gameId}:`, error);
-        throw error;
-      }
-    }));
+        
+        console.info('Connecting to Kafka...');
+        await producer.connect();
+        console.info('Successfully connected to Kafka');
 
-    await producer.disconnect();
-    logger.info('Successfully published all games');
+        await producer.send({
+          topic: 'nba-game-updates',
+          messages: games.map((game: NBAGame) => ({
+            key: game.gameId,
+            value: JSON.stringify(game)
+          }))
+        });
+        console.info('Successfully published games to Kafka');
+      } catch (kafkaError) {
+        console.error('Failed to publish to Kafka:', kafkaError);
+        if (!USE_SQS) throw kafkaError;
+      } finally {
+        try {
+          await producer?.disconnect();
+        } catch (error) {
+          console.error('Error disconnecting from Kafka:', error);
+        }
+      }
+    }
+
+    // Use SQS if enabled or as fallback
+    if (USE_SQS) {
+      console.info('Publishing to SQS...', {
+        queueUrl: process.env.SQS_QUEUE_URL,
+        gameCount: games.length
+      });
+      
+      try {
+        await Promise.all(games.map(async (game: NBAGame) => {
+          const messageParams = {
+            QueueUrl: process.env.SQS_QUEUE_URL,
+            MessageBody: JSON.stringify(game),
+            MessageGroupId: game.gameId,
+            MessageDeduplicationId: `${game.gameId}-${Date.now()}`,
+          };
+          console.debug('Sending SQS message:', messageParams);
+          
+          const result = await sqs.send(new SendMessageCommand(messageParams));
+          console.info('SQS message sent successfully:', {
+            gameId: game.gameId,
+            messageId: result.MessageId
+          });
+        }));
+        console.info('Successfully published all games to SQS');
+      } catch (error) {
+        console.error('Error publishing to SQS:', error);
+        throw error;  // Re-throw to trigger Lambda retry
+      }
+    }
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: 'Games published to Kafka' })
+      body: JSON.stringify({ message: 'Games processed successfully' })
     };
-  } catch (error: any) {
-    logger.error('Error publishing games:', {
-      error: error.message,
-      stack: error.stack,
-      details: error.toString()
-    });
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ 
-        error: 'Failed to publish games',
-        details: error.message,
-        type: error.name
-      })
-    };
+  } catch (error) {
+    console.error('Error processing game updates:', error);
+    throw error;
   }
 };
 
-exports.handler = handler; 
+export { handler }; 

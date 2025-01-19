@@ -10,21 +10,13 @@ function Package-Lambda {
     )
     
     try {
-        Write-Host "Packaging $functionName..."
-        $lambdaDir = Join-Path $PSScriptRoot "..\lambda"
+        Write-Host "Packaging $functionName..." -ForegroundColor Cyan
         
         # Create lambda dist directory if it doesn't exist
+        $lambdaDir = Join-Path $PSScriptRoot "..\lambda"
         $lambdaDistDir = Join-Path $lambdaDir "dist\lambdas"
         if (-not (Test-Path $lambdaDistDir)) {
             New-Item -ItemType Directory -Force -Path $lambdaDistDir | Out-Null
-        }
-        
-        # Set the correct output path in the lambda dist directory
-        $outputPath = Join-Path $lambdaDistDir "$functionName.zip"
-        
-        # Remove existing zip if it exists
-        if (Test-Path $outputPath) {
-            Remove-Item -Path $outputPath -Force
         }
 
         # Create a temporary directory for the package
@@ -38,87 +30,123 @@ function Package-Lambda {
         $tempSrcDir = Join-Path $tempDir "src"
         New-Item -ItemType Directory -Force -Path $tempSrcDir | Out-Null
 
-        # Create a simplified mockData.ts for Lambda
-        $mockDataContent = @'
-// Simplified mock data for Lambda functions
-export const mockScoreboard = { games: [] };
-export const mockBoxScore = { game: null };
-'@
-        $mockDataPath = Join-Path $tempSrcDir "services/mockData.ts"
-        $mockDataDir = Split-Path -Parent $mockDataPath
-        if (-not (Test-Path $mockDataDir)) {
-            New-Item -ItemType Directory -Force -Path $mockDataDir | Out-Null
-        }
-        Set-Content -Path $mockDataPath -Value $mockDataContent
-
-        # Copy necessary source files while maintaining directory structure
-        $srcFiles = @(
-            "lambdas/$functionName.ts",
-            "services/nbaService.ts",
-            "types/index.ts",
-            "types/enums.ts",
-            "config/logger.ts",
-            "config/nbaApi.ts"
+        # Verify required files exist before starting
+        $requiredFiles = @(
+            @{
+                Path = Join-Path $lambdaDir "package.json"
+                Name = "package.json"
+            },
+            @{
+                Path = Join-Path $lambdaDir "yarn.lock"
+                Name = "yarn.lock"
+            },
+            @{
+                Path = Join-Path $lambdaDir "tsconfig.json"
+                Name = "tsconfig.json"
+            }
         )
 
-        foreach ($file in $srcFiles) {
-            $sourcePath = Join-Path $PSScriptRoot "../../src" $file
-            $targetDir = Join-Path $tempSrcDir (Split-Path -Parent $file)
-            $targetPath = Join-Path $tempSrcDir $file
-
-            if (Test-Path $sourcePath) {
-                if (-not (Test-Path $targetDir)) {
-                    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-                }
-                Copy-Item -Path $sourcePath -Destination $targetPath -Force
+        foreach ($file in $requiredFiles) {
+            if (-not (Test-Path $file.Path)) {
+                throw "Required file not found: $($file.Name) in $lambdaDir"
             }
         }
 
-        # Copy package.json and tsconfig.json
-        Copy-Item -Path (Join-Path $lambdaDir "package.json") -Destination $tempDir
-        Copy-Item -Path (Join-Path $PSScriptRoot "../../tsconfig.json") -Destination $tempDir
+        # Copy necessary source files while maintaining directory structure
+        $srcFiles = @(
+            "lambdas/$sourcePath",
+            "types/index.ts",
+            "types/enums.ts",
+            "config/logger.ts",
+            "config/nbaApi.ts",
+            "services/nbaService.ts",
+            "services/mockData.ts"
+        )
 
-        # Install dependencies including TypeScript
+        $missingFiles = @()
+        foreach ($file in $srcFiles) {
+            $sourceFile = Join-Path $PSScriptRoot "..\..\src" $file
+            $targetDir = Join-Path $tempSrcDir (Split-Path -Parent $file)
+            $targetFile = Join-Path $tempSrcDir $file
+
+            if (Test-Path $sourceFile) {
+                if (-not (Test-Path $targetDir)) {
+                    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+                }
+                Copy-Item -Path $sourceFile -Destination $targetFile -Force
+            } else {
+                $missingFiles += $file
+            }
+        }
+
+        if ($missingFiles.Count -gt 0) {
+            throw "Required source files not found:`n$($missingFiles | ForEach-Object { "- $_" } | Out-String)"
+        }
+
+        # Copy package.json and yarn.lock from lambda directory
+        Copy-Item -Path (Join-Path $lambdaDir "package.json") -Destination $tempDir
+        Copy-Item -Path (Join-Path $lambdaDir "yarn.lock") -Destination $tempDir
+        Copy-Item -Path (Join-Path $lambdaDir "tsconfig.json") -Destination $tempDir
+
+        # Install dependencies using yarn
         Push-Location $tempDir
         try {
-            Write-Host "Installing dependencies..."
-            yarn install
-            yarn add -D typescript @types/node
-
-            # Create dist directory
-            $distDir = Join-Path $tempDir "dist"
-            New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+            Write-Host "Installing dependencies for $functionName..." -ForegroundColor Cyan
+            $yarnOutput = yarn install 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "Yarn install failed with exit code $LASTEXITCODE`n$yarnOutput"
+            }
             
             # Compile TypeScript
-            Write-Host "Compiling TypeScript..."
-            yarn tsc --outDir dist
+            Write-Host "Compiling TypeScript for $functionName..." -ForegroundColor Cyan
+            $tscOutput = yarn tsc 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "TypeScript compilation failed with exit code $LASTEXITCODE`n$tscOutput"
+            }
 
-            # Create the zip file with proper directory structure
-            Write-Host "Creating zip file..."
-            $zipDir = Join-Path $tempDir "zip"
-            New-Item -ItemType Directory -Force -Path $zipDir | Out-Null
-
-            # Copy compiled JS files to root of zip
-            Get-ChildItem -Path (Join-Path $tempDir "dist/lambdas") -Filter "$functionName.js" | 
-                Copy-Item -Destination $zipDir -Force
-            
-            # Copy other compiled files maintaining directory structure
-            Copy-Item -Path (Join-Path $tempDir "dist/services") -Destination (Join-Path $zipDir "services") -Recurse -Force
-            Copy-Item -Path (Join-Path $tempDir "dist/types") -Destination (Join-Path $zipDir "types") -Recurse -Force
-            Copy-Item -Path (Join-Path $tempDir "dist/config") -Destination (Join-Path $zipDir "config") -Recurse -Force
-            
-            # Copy node_modules
-            Copy-Item -Path (Join-Path $tempDir "node_modules") -Destination $zipDir -Recurse -Force
+            # Verify compilation output exists
+            $distPath = Join-Path $tempDir "dist"
+            if (-not (Test-Path $distPath) -or (Get-ChildItem $distPath -Recurse -File).Count -eq 0) {
+                throw "TypeScript compilation produced no output files"
+            }
 
             # Create the final zip file
-            Compress-Archive -Path "$zipDir/*" -DestinationPath $outputPath -Force
+            $zipPath = Join-Path $lambdaDistDir $outputPath
             
-            Write-Host "Successfully packaged $functionName to $outputPath"
+            # Create a directory for the final package contents
+            $packageDir = Join-Path $tempDir "package"
+            New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+
+            # Copy compiled files and production dependencies
+            Copy-Item -Path (Join-Path $tempDir "dist/*") -Destination $packageDir -Recurse
+            
+            # Install production dependencies only
+            Push-Location $packageDir
+            try {
+                Copy-Item -Path (Join-Path $tempDir "package.json") -Destination .
+                Copy-Item -Path (Join-Path $tempDir "yarn.lock") -Destination .
+                $yarnProdOutput = yarn install --production --frozen-lockfile 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Production dependencies installation failed with exit code $LASTEXITCODE`n$yarnProdOutput"
+                }
+            }
+            finally {
+                Pop-Location
+            }
+
+            # Create the zip file
+            Compress-Archive -Path "$packageDir/*" -DestinationPath $zipPath -Force
+
+            # Verify zip file was created and has content
+            if (-not (Test-Path $zipPath) -or (Get-Item $zipPath).Length -eq 0) {
+                throw "Failed to create zip file or zip file is empty: $zipPath"
+            }
+
+            Write-Host "Successfully packaged $functionName to $zipPath" -ForegroundColor Green
         }
         finally {
             Pop-Location
-            
-            # Cleanup
+            # Cleanup temp directory
             if (Test-Path $tempDir) {
                 Remove-Item -Path $tempDir -Recurse -Force
             }
@@ -133,15 +161,15 @@ export const mockBoxScore = { game: null };
 try {
     # Package each Lambda function
     Package-Lambda -functionName "gameUpdateHandler" `
-        -sourcePath "src/lambdas/gameUpdateHandler.ts" `
+        -sourcePath "gameUpdateHandler.ts" `
         -outputPath "gameUpdateHandler.zip"
 
     Package-Lambda -functionName "boxScoreHandler" `
-        -sourcePath "src/lambdas/boxScoreHandler.ts" `
+        -sourcePath "boxScoreHandler.ts" `
         -outputPath "boxScoreHandler.zip"
 
-    Write-Host "Lambda packaging complete"
+    Write-Host "Lambda packaging complete" -ForegroundColor Green
 } catch {
-    Write-Error $_.Exception.Message
+    Write-Error "Lambda packaging failed: $($_.Exception.Message)"
     exit 1
 }
