@@ -12,7 +12,8 @@ output "redis_endpoint" {
 }
 
 output "dynamodb_table_name" {
-  value = aws_dynamodb_table.games.name
+  description = "Name of the DynamoDB table"
+  value = aws_dynamodb_table.games_table.name
 }
 
 output "lambda_functions" {

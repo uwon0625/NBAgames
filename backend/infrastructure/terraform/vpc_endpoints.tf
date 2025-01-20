@@ -17,11 +17,9 @@ resource "aws_vpc_endpoint" "dynamodb" {
         Effect = "Allow"
         Principal = "*"
         Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:Query"
+          "dynamodb:*"
         ]
-        Resource = aws_dynamodb_table.games.arn
+        Resource = aws_dynamodb_table.games_table.arn
       }
     ]
   })

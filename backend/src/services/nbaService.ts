@@ -73,27 +73,40 @@ export function transformNBAGames(games: any[]): GameScore[] {
 
 export async function getTodaysGames(): Promise<GameScore[]> {
   try {
-    logger.info('Fetching today\'s games from NBA API -> ' + nbaApiConfig.scoreboardUrl);
-    const response = await axios.get(nbaApiConfig.scoreboardUrl);
+    logger.debug('Fetching today\'s games from NBA API');
     
-    if (response.status !== 200) {
-      throw new Error(`NBA API responded with status: ${response.status}`);
+    // Use mock data in development
+    if (process.env.USE_MOCK_DATA === 'true') {
+      logger.debug('Using mock data for games');
+      return transformNBAGames(mockScoreboard.scoreboard.games);
     }
 
-    // Log raw response for game 0022400531
-    const targetGame = response.data.scoreboard.games.find((g: any) => g.gameId === '0022400531');
-    if (targetGame) {
-      logger.debug('Raw data for game 0022400531:', {
-        homeTeam: targetGame.homeTeam,
-        awayTeam: targetGame.awayTeam
-      });
+    // Fetch from NBA API
+    logger.debug(`Fetching from NBA API: ${nbaApiConfig.scoreboardUrl}`);
+    const response = await fetch(nbaApiConfig.scoreboardUrl);
+    const data: unknown = await response.json();
+    logger.debug('NBA API response:', data);
+
+    // Type guard for NBA API response
+    if (!data || typeof data !== 'object' || !('scoreboard' in data)) {
+      throw new Error('Invalid API response format');
     }
 
-    const games = transformNBAGames(response.data.scoreboard.games);
-    logger.info(`Fetched ${games.length} games from NBA API`);
+    const scoreboard = data.scoreboard;
+    if (!scoreboard || typeof scoreboard !== 'object' || !('games' in scoreboard)) {
+      throw new Error('Invalid scoreboard format');
+    }
+
+    if (!Array.isArray(scoreboard.games)) {
+      throw new Error('Games data is not an array');
+    }
+
+    // Transform and return the data
+    const games = transformNBAGames(scoreboard.games);
+    logger.debug(`Found ${games.length} games:`, games.map(g => g.gameId));
     return games;
   } catch (error) {
-    logger.error('Failed to fetch today\'s games:', error);
+    logger.error('Error fetching games from NBA API:', error);
     throw error;
   }
 }
@@ -118,15 +131,20 @@ export function transformNBABoxScore(game: any): GameBoxScore {
 
 export async function getGameBoxScore(gameId: string): Promise<GameBoxScore | null> {
   try {
-    if (process.env.USE_MOCK_DATA === 'true') {
-      return transformNBABoxScore(mockBoxScoreData.game);
-    }
+    // Remove mock data usage
+    // if (process.env.USE_MOCK_DATA === 'true') {
+    //   return transformNBABoxScore(mockBoxScoreData.game);
+    // }
 
-    logger.info(`Fetching box score for game ${gameId} -> ${nbaApiConfig.baseUrl}/boxscore/boxscore_${gameId}.json`);
+    logger.info(`Fetching box score for game ${gameId} from NBA API`);
     const response = await axios.get(`${nbaApiConfig.baseUrl}/boxscore/boxscore_${gameId}.json`);
-    if (response.status === 200) {
+    
+    if (response.status === 200 && response.data?.game) {
+      logger.debug(`Successfully fetched box score for game ${gameId}`);
       return transformNBABoxScore(response.data.game);
     }
+
+    logger.warn(`No box score data available for game ${gameId}`);
     return null;
   } catch (error) {
     logger.error(`Error fetching box score for game ${gameId}:`, error);
@@ -140,7 +158,8 @@ function transformBoxScoreTeam(team: any): TeamBoxScore {
   }
 
   const stats = team.statistics || {};
-  logger.debug(`transformBoxScoreTeam > Team assists:${stats.assists}`);
+  logger.debug(`Team ${team.teamTricode} box score stats:`, stats);
+  
   return {
     teamId: team.teamId.toString(),
     teamTricode: team.teamTricode,

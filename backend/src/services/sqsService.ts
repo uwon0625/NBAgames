@@ -13,11 +13,14 @@ export class SQSService {
 
   async sendGameUpdate(game: GameScore): Promise<void> {
     try {
+      const messageId = Date.now().toString();
+      logger.info(`Sending game update to SQS for game ${game.gameId} (MessageId: ${messageId})`);
+      
       await this.sqsClient.send(new SendMessageCommand({
         QueueUrl: this.queueUrl,
         MessageBody: JSON.stringify(game),
         MessageGroupId: `game${game.gameId}`,
-        MessageDeduplicationId: Date.now().toString(),
+        MessageDeduplicationId: messageId,
         MessageAttributes: {
           'gameId': {
             DataType: 'String',
@@ -33,7 +36,8 @@ export class SQSService {
           }
         }
       }));
-      logger.debug(`Sent game update to SQS for game ${game.gameId} (Period: ${game.period})`);
+      
+      logger.info(`Successfully sent game update to SQS (MessageId: ${messageId})`);
     } catch (error) {
       logger.error('Error sending game update to SQS:', error);
       throw error;

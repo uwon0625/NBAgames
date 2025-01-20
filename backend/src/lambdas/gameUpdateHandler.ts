@@ -1,12 +1,13 @@
-import { Context } from 'aws-lambda';
+import { SQSEvent } from 'aws-lambda';
 import { GameService } from '../services/gameService';
 import { getTodaysGames } from '../services/nbaService';
 import { SQSService } from '../services/sqsService';
 import { logger } from '../config/logger';
 import { GameStatus } from '../types/enums';
+import { GameScore } from '../types';
 
-export const handler = async (event: any, context: Context): Promise<void> => {
-  const gameService = new GameService();
+export const handler = async (event: SQSEvent): Promise<void> => {
+  const gameService = GameService.getInstance();
   const sqsService = new SQSService();
 
   try {
@@ -32,7 +33,21 @@ export const handler = async (event: any, context: Context): Promise<void> => {
     logger.error('Error in game update handler:', error);
     throw error;
   } finally {
-    await gameService.cleanup();
     await sqsService.cleanup();
+  }
+};
+
+export const sqsHandler = async (event: SQSEvent): Promise<void> => {
+  const gameService = GameService.getInstance();  // Initialize gameService
+  
+  try {
+    for (const record of event.Records) {
+      const gameUpdate = JSON.parse(record.body) as GameScore;
+      await gameService.updateGame(gameUpdate);
+      logger.info(`Updated game ${gameUpdate.gameId}`);
+    }
+  } catch (error) {
+    logger.error('Error in game update handler:', error);
+    throw error;  // Let Lambda retry the batch
   }
 }; 

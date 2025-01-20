@@ -5,6 +5,7 @@ import { logger } from '../config/logger';
 import { GameScore, GameBoxScore, NBATeamStats, TeamBoxScore, Team } from '../types';
 import { GameStatus } from '../types/enums';
 import { getTodaysGames } from './nbaService';
+import { getGameBoxScore } from './nbaService';
 
 // Add validation interfaces
 interface ValidationResult {
@@ -13,16 +14,18 @@ interface ValidationResult {
 }
 
 export class GameService {
+  private static instance: GameService;
   private ddbClient: DynamoDBClient;
   private docClient: DynamoDBDocumentClient;
   private redis!: Redis;
   private tableName: string;
   private redisEnabled: boolean;
 
-  constructor() {
+  private constructor() {
     this.ddbClient = new DynamoDBClient({});
     this.docClient = DynamoDBDocumentClient.from(this.ddbClient);
-    this.tableName = process.env.DYNAMODB_TABLE_NAME || '';
+    this.tableName = process.env.DYNAMODB_TABLE_NAME || 'nba-live-games-dev';
+    this.logTableSchema(); // Log table config on initialization
     
     // Initialize Redis with error handling
     this.redisEnabled = !!process.env.REDIS_ENDPOINT;
@@ -37,6 +40,20 @@ export class GameService {
       this.redis = new Redis(null as any);
       this.redis.disconnect();
     }
+  }
+
+  public static getInstance(): GameService {
+    if (!GameService.instance) {
+      GameService.instance = new GameService();
+    }
+    return GameService.instance;
+  }
+
+  private logTableSchema() {
+    logger.debug('DynamoDB Table Config:', {
+      tableName: this.tableName,
+      region: process.env.AWS_REGION || 'default'
+    });
   }
 
   private async tryRedisGet(key: string): Promise<string | null> {
@@ -60,6 +77,14 @@ export class GameService {
 
   async getGame(gameId: string): Promise<GameBoxScore | null> {
     try {
+      // Validate game ID format
+      if (!gameId.match(/^[0-9]{10}$/)) {
+        logger.warn(`Invalid game ID format: ${gameId}`);
+        return null;
+      }
+
+      logger.debug(`Fetching game ${gameId} from table ${this.tableName}`);
+      
       // Try Redis first for box score
       const cachedBoxScore = await this.tryRedisGet(`boxscore:${gameId}`);
       if (cachedBoxScore) {
@@ -67,28 +92,35 @@ export class GameService {
         return JSON.parse(cachedBoxScore);
       }
 
-      // Try Redis for basic game data
-      const cachedGame = await this.tryRedisGet(`game:${gameId}`);
-      if (cachedGame) {
-        logger.debug(`Basic game cache hit for game ${gameId}, but no box score available`);
-        return null;
-      }
-
       // Fallback to DynamoDB
-      logger.info(`Cache miss for game ${gameId}, fetching from DynamoDB`);
+      logger.debug(`Cache miss for game ${gameId}, querying DynamoDB`);
       const result = await this.docClient.send(new GetCommand({
         TableName: this.tableName,
-        Key: { gameId }
+        Key: {
+          gameId: gameId.toString()
+        }
       }));
 
-      if (!result.Item) {
-        return null;
+      logger.debug(`DynamoDB result for game ${gameId}:`, {
+        tableExists: !!this.tableName,
+        hasItem: !!result.Item,
+        item: result.Item
+      });
+
+      // If game exists but no box score, try to fetch from NBA API
+      if (result.Item && !('totals' in result.Item.homeTeam)) {
+        logger.debug(`Found basic game data for ${gameId}, fetching box score from NBA API`);
+        const boxScore = await getGameBoxScore(gameId);
+        if (boxScore) {
+          // Update DynamoDB with box score
+          await this.updateGame(boxScore);
+          return boxScore;
+        }
       }
 
-      // Check if the item is a box score
-      const gameData = result.Item;
-      if ('homeTeam' in gameData && 'totals' in gameData.homeTeam) {
-        const boxScore = gameData as GameBoxScore;
+      // Return box score if it exists
+      if (result.Item && 'totals' in result.Item.homeTeam) {
+        const boxScore = result.Item as GameBoxScore;
         await this.tryRedisSet(
           `boxscore:${gameId}`,
           JSON.stringify(boxScore),
@@ -97,10 +129,10 @@ export class GameService {
         return boxScore;
       }
 
-      logger.debug(`Found basic game data for ${gameId}, but no box score available`);
+      logger.debug(`No box score available for game ${gameId}`);
       return null;
     } catch (error) {
-      logger.error('Error fetching game:', error);
+      logger.error(`Error fetching game ${gameId}:`, error);
       throw error;
     }
   }
@@ -221,7 +253,7 @@ export class GameService {
   async getLiveGames(): Promise<GameScore[]> {
     try {
       // Try Redis first
-      const cachedLiveGames = await this.redis.get('games:live');
+      const cachedLiveGames = await this.tryRedisGet('games:live');
       if (cachedLiveGames) {
         logger.debug('Cache hit for live games');
         return JSON.parse(cachedLiveGames);
@@ -240,58 +272,61 @@ export class GameService {
         }
       }));
 
+      // Ensure we return an array even if no games are found
       const games = (result.Items || []) as GameScore[];
       
       // Cache live games with short TTL
-      await this.redis.set(
-        'games:live',
-        JSON.stringify(games),
-        'EX',
-        30 // 30 seconds
-      );
+      if (games.length > 0) {
+        await this.tryRedisSet(
+          'games:live',
+          JSON.stringify(games),
+          30 // 30 seconds
+        );
+      }
 
       return games;
     } catch (error) {
       logger.error('Error fetching live games:', error);
-      throw error;
+      return []; // Return empty array on error
     }
   }
 
   async getAllGames(): Promise<GameScore[]> {
     try {
-      // Try Redis first with a shorter TTL for live games
-      const cachedGames = await this.redis.get('games:all');
+      // Try Redis first
+      const cachedGames = await this.tryRedisGet('games:all');
       if (cachedGames) {
         const games = JSON.parse(cachedGames);
-        // Check if we need to refresh live games
-        const hasLiveGames = games.some((g: GameScore) => g.status === GameStatus.LIVE);
-        if (!hasLiveGames) {
-          logger.debug('Cache hit for all games (no live games)');
+        // Only use cache for non-live games
+        const hasActiveGames = games.some((g: GameScore) => 
+          g.status === GameStatus.LIVE || 
+          (g.status === GameStatus.FINAL && g.lastUpdate > Date.now() - 5 * 60 * 1000)
+        );
+        if (!hasActiveGames) {
+          logger.debug('Cache hit for all games (no active games)');
           return games;
         }
       }
 
-      // Fallback to DynamoDB
-      logger.info('Cache miss or has live games, fetching from DynamoDB');
+      // Query DynamoDB for all today's games
       const result = await this.docClient.send(new ScanCommand({
-        TableName: this.tableName
+        TableName: this.tableName,
+        FilterExpression: 'begins_with(gameId, :today)',
+        ExpressionAttributeValues: {
+          ':today': new Date().toISOString().slice(0, 10).replace(/-/g, '')
+        }
       }));
 
       const games = (result.Items || []) as GameScore[];
       
       // Cache with TTL based on game states
       const ttl = games.some(g => g.status === GameStatus.LIVE) ? 30 : 300; // 30s for live games, 5m otherwise
-      await this.redis.set(
-        'games:all',
-        JSON.stringify(games),
-        'EX',
-        ttl
-      );
+      await this.tryRedisSet('games:all', JSON.stringify(games), ttl);
 
       return games;
     } catch (error) {
       logger.error('Error fetching all games:', error);
-      throw error;
+      return []; // Return empty array on error
     }
   }
 

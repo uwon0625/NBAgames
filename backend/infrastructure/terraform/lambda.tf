@@ -64,34 +64,34 @@ module "lambda_security_group" {
 
 # Lambda functions
 resource "aws_lambda_function" "game_update_handler" {
-  filename         = "../lambda/dist/lambdas/gameUpdateHandler.zip"
+  filename         = data.archive_file.game_update_handler.output_path
   function_name    = "${var.project_name}-game-update-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
   handler         = "index.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
-  source_code_hash = filebase64sha256("${path.module}/../lambda/dist/lambdas/gameUpdateHandler.zip")
+  source_code_hash = data.archive_file.game_update_handler.output_base64sha256
 
   environment {
     variables = {
-      ENVIRONMENT = var.environment
-      SQS_QUEUE_URL = aws_sqs_queue.game_updates.url
-      USE_MSK = tostring(var.use_msk)
-      USE_SQS = "true"
-      DYNAMODB_TABLE_NAME = aws_dynamodb_table.games.name
-      USE_LOCAL_SERVICES = tostring(var.use_local_services)
-      NBA_BASE_URL = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
-      NODE_ENV = var.environment
-      KAFKA_TOPIC = "nba-game-updates"
-      KAFKA_BROKERS = var.use_msk ? join(",", local.msk_brokers) : var.kafka_brokers
-      DEBUG_RAW_MSK = jsonencode({
+      NODE_ENV            = var.environment
+      REDIS_ENDPOINT      = var.use_elasticache ? aws_elasticache_cluster.nba_live[0].cache_nodes[0].address : ""
+      GAME_QUEUE_URL      = aws_sqs_queue.game_updates.url
+      DYNAMODB_TABLE_NAME = aws_dynamodb_table.games_table.name
+      ENVIRONMENT         = var.environment
+      USE_MSK             = tostring(var.use_msk)
+      USE_SQS             = "true"
+      USE_LOCAL_SERVICES  = tostring(var.use_local_services)
+      NBA_BASE_URL        = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
+      KAFKA_TOPIC         = "nba-game-updates"
+      KAFKA_BROKERS       = var.use_msk ? join(",", local.msk_brokers) : var.kafka_brokers
+      DEBUG_RAW_MSK       = jsonencode({
         enabled = var.use_msk
         brokers = var.use_msk ? local.msk_brokers : []
         clientId = var.kafka_client_id
         groupId = var.kafka_group_id
       })
-      REDIS_ENDPOINT = var.use_elasticache ? aws_elasticache_cluster.nba_live[0].cache_nodes[0].address : "localhost:6379"
     }
   }
 
@@ -114,26 +114,25 @@ resource "aws_lambda_function" "game_update_handler" {
 }
 
 resource "aws_lambda_function" "box_score_handler" {
-  filename         = "../lambda/dist/lambdas/boxScoreHandler.zip"
+  filename         = data.archive_file.box_score_handler.output_path
   function_name    = "${var.project_name}-box-score-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
   handler         = "index.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
-  source_code_hash = filebase64sha256("${path.module}/../lambda/dist/lambdas/boxScoreHandler.zip")
+  source_code_hash = data.archive_file.box_score_handler.output_base64sha256
 
   environment {
     variables = {
-      ENVIRONMENT = var.environment
-      SQS_QUEUE_URL = aws_sqs_queue.game_updates.url
-      USE_MSK = tostring(var.use_msk)
-      USE_SQS = "true"
-      DYNAMODB_TABLE_NAME = aws_dynamodb_table.games.name
-      USE_LOCAL_SERVICES = tostring(var.use_local_services)
-      NBA_BASE_URL = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
-      NODE_ENV = var.environment
-      REDIS_ENDPOINT = var.use_elasticache ? aws_elasticache_cluster.nba_live[0].cache_nodes[0].address : "localhost:6379"
+      NODE_ENV            = var.environment
+      REDIS_ENDPOINT      = var.use_elasticache ? aws_elasticache_cluster.nba_live[0].cache_nodes[0].address : ""
+      DYNAMODB_TABLE_NAME = aws_dynamodb_table.games_table.name
+      ENVIRONMENT         = var.environment
+      USE_MSK             = tostring(var.use_msk)
+      USE_SQS             = "true"
+      USE_LOCAL_SERVICES  = tostring(var.use_local_services)
+      NBA_BASE_URL        = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
     }
   }
 

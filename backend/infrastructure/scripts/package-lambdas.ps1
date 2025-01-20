@@ -145,6 +145,13 @@ exports.handler = handler;
             $zipPath = Join-Path $lambdaDistDir $outputPath
             Compress-Archive -Path "$packageDir/*" -DestinationPath $zipPath -Force
 
+            # Copy the package to the expected directory for Terraform
+            $functionDir = Join-Path (Split-Path -Parent $lambdaDistDir) (Split-Path -LeafBase $outputPath)
+            if (Test-Path $functionDir) {
+                Remove-Item -Path $functionDir -Recurse -Force
+            }
+            Copy-Item -Path $packageDir -Destination $functionDir -Recurse
+
             # Verify zip file was created and has content
             if (-not (Test-Path $zipPath) -or (Get-Item $zipPath).Length -eq 0) {
                 throw "Failed to create zip file or zip file is empty: $zipPath"

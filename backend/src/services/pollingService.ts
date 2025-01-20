@@ -1,83 +1,62 @@
-import { logger } from '../config/logger';
 import { GameService } from './gameService';
-import { getTodaysGames } from './nbaService';
-import { SQSService } from './sqsService';
+import { logger } from '../config/logger';
+import { getTodaysGames, getGameBoxScore } from './nbaService';
 import { GameStatus } from '../types/enums';
 
 export class PollingService {
   private gameService: GameService;
-  private sqsService: SQSService;
-  private pollingInterval: NodeJS.Timeout | null;
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private readonly POLL_INTERVAL = 30000; // 30 seconds
 
   constructor() {
-    this.gameService = new GameService();
-    this.sqsService = new SQSService();
-    this.pollingInterval = null;
+    // Use getInstance instead of new GameService()
+    this.gameService = GameService.getInstance();
   }
 
-  async startPolling(): Promise<void> {
-    logger.info('Starting game polling service');
-    
-    // Initial poll
-    await this.pollGames();
+  public startPolling(): void {
+    logger.info('Starting polling service');
+    this.pollGames(); // Initial poll
+    this.pollingInterval = setInterval(() => this.pollGames(), this.POLL_INTERVAL);
+  }
 
-    // Set up regular polling
-    this.pollingInterval = setInterval(async () => {
-      await this.pollGames();
-    }, this.getPollingInterval());
+  public stopPolling(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+      logger.info('Polling service stopped');
+    }
   }
 
   private async pollGames(): Promise<void> {
     try {
+      logger.debug('Starting game poll');
       const games = await getTodaysGames();
+      logger.debug(`Found ${games.length} games to process`);
       
       for (const game of games) {
-        const existingGame = await this.gameService.getGame(game.gameId);
+        logger.debug(`Processing game ${game.gameId}`);
         
-        // Check for important events that need immediate processing
-        if (this.isImportantUpdate(game, existingGame)) {
-          await this.sqsService.sendGameUpdate(game);
-          logger.info(`Queued important update for game ${game.gameId}`);
-        }
-        
-        // Always update the game in database
+        // Update basic game info first
         await this.gameService.updateGame(game);
+        
+        // Fetch box score for live and recently finished games
+        if (game.status === GameStatus.LIVE || 
+            (game.status === GameStatus.FINAL && game.lastUpdate > Date.now() - 5 * 60 * 1000)) { // 5 minutes
+          logger.debug(`Fetching box score for game ${game.gameId} (${game.status})`);
+          const boxScore = await getGameBoxScore(game.gameId);
+          
+          if (boxScore) {
+            await this.gameService.updateGame(boxScore);
+            logger.debug(`Updated box score for game ${game.gameId}`);
+          } else {
+            logger.warn(`Failed to fetch box score for game ${game.gameId}`);
+          }
+        }
       }
+
+      logger.debug(`Completed polling ${games.length} games`);
     } catch (error) {
       logger.error('Error polling games:', error);
     }
-  }
-
-  private isImportantUpdate(currentGame: any, previousGame: any): boolean {
-    if (!previousGame) return true;
-    
-    return (
-      // Quarter end
-      currentGame.period !== previousGame.period ||
-      // Game status change
-      currentGame.status !== previousGame.status ||
-      // Final score
-      currentGame.status === GameStatus.FINAL
-    );
-  }
-
-  private getPollingInterval(): number {
-    // More frequent polling during game times
-    const hour = new Date().getHours();
-    return (hour >= 17 && hour <= 23) ? 30000 : 60000; // 30s during games, 1m otherwise
-  }
-
-  async stopPolling(): Promise<void> {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-    }
-    
-    await Promise.all([
-      this.gameService.cleanup(),
-      this.sqsService.cleanup()
-    ]);
-    
-    logger.info('Stopped game polling service');
   }
 } 
