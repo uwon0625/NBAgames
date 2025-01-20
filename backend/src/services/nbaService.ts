@@ -73,7 +73,7 @@ export function transformNBAGames(games: any[]): GameScore[] {
 
 export async function getTodaysGames(): Promise<GameScore[]> {
   try {
-    logger.info('Fetching today\'s games from NBA API');
+    logger.info('Fetching today\'s games from NBA API -> ' + nbaApiConfig.scoreboardUrl);
     const response = await axios.get(nbaApiConfig.scoreboardUrl);
     
     if (response.status !== 200) {

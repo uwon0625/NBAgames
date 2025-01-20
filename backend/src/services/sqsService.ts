@@ -16,6 +16,8 @@ export class SQSService {
       await this.sqsClient.send(new SendMessageCommand({
         QueueUrl: this.queueUrl,
         MessageBody: JSON.stringify(game),
+        MessageGroupId: `game${game.gameId}`,
+        MessageDeduplicationId: Date.now().toString(),
         MessageAttributes: {
           'gameId': {
             DataType: 'String',

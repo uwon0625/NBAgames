@@ -85,6 +85,7 @@ function Package-Lambda {
             throw "Required source files not found:`n$($missingFiles | ForEach-Object { "- $_" } | Out-String)"
         }
 
+
         # Copy package.json and yarn.lock from lambda directory
         Copy-Item -Path (Join-Path $lambdaDir "package.json") -Destination $tempDir
         Copy-Item -Path (Join-Path $lambdaDir "yarn.lock") -Destination $tempDir
@@ -116,16 +117,17 @@ function Package-Lambda {
             $packageDir = Join-Path $tempDir "package"
             New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
 
-            # Copy the handler file to the root level
-            Get-ChildItem -Path (Join-Path $distPath "lambdas") -Filter "$functionName.js" | 
-                Copy-Item -Destination $packageDir
+            # Create index.ts at the root level that imports from lambdas directory
+            $indexContent = @"
+const { handler } = require('./lambdas/$functionName.js');
+exports.handler = handler;
+"@
+            Set-Content (Join-Path $packageDir "index.js") $indexContent
 
-            # Copy other directories maintaining structure
-            Copy-Item -Path (Join-Path $distPath "services") -Destination $packageDir -Recurse
-            Copy-Item -Path (Join-Path $distPath "config") -Destination $packageDir -Recurse
-            Copy-Item -Path (Join-Path $distPath "types") -Destination $packageDir -Recurse
+            # Copy the compiled files maintaining directory structure
+            Copy-Item -Path (Join-Path $distPath "*") -Destination $packageDir -Recurse
 
-            # Install production dependencies
+            # Copy production dependencies
             Push-Location $packageDir
             try {
                 Copy-Item -Path (Join-Path $tempDir "package.json") -Destination .

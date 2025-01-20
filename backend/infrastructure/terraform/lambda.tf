@@ -67,7 +67,7 @@ resource "aws_lambda_function" "game_update_handler" {
   filename         = "../lambda/dist/lambdas/gameUpdateHandler.zip"
   function_name    = "${var.project_name}-game-update-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "gameUpdateHandler.handler"
+  handler         = "index.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
@@ -91,6 +91,7 @@ resource "aws_lambda_function" "game_update_handler" {
         clientId = var.kafka_client_id
         groupId = var.kafka_group_id
       })
+      REDIS_ENDPOINT = var.use_elasticache ? aws_elasticache_cluster.nba_live[0].cache_nodes[0].address : "localhost:6379"
     }
   }
 
@@ -116,7 +117,7 @@ resource "aws_lambda_function" "box_score_handler" {
   filename         = "../lambda/dist/lambdas/boxScoreHandler.zip"
   function_name    = "${var.project_name}-box-score-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "boxScoreHandler.handler"
+  handler         = "index.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
@@ -132,6 +133,7 @@ resource "aws_lambda_function" "box_score_handler" {
       USE_LOCAL_SERVICES = tostring(var.use_local_services)
       NBA_BASE_URL = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData"
       NODE_ENV = var.environment
+      REDIS_ENDPOINT = var.use_elasticache ? aws_elasticache_cluster.nba_live[0].cache_nodes[0].address : "localhost:6379"
     }
   }
 

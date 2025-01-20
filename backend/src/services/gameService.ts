@@ -2,34 +2,73 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import Redis from 'ioredis';
 import { logger } from '../config/logger';
-import { GameScore, GameBoxScore } from '../types';
+import { GameScore, GameBoxScore, NBATeamStats, TeamBoxScore, Team } from '../types';
 import { GameStatus } from '../types/enums';
 import { getTodaysGames } from './nbaService';
+
+// Add validation interfaces
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
 
 export class GameService {
   private ddbClient: DynamoDBClient;
   private docClient: DynamoDBDocumentClient;
-  private redis: Redis;
+  private redis!: Redis;
   private tableName: string;
+  private redisEnabled: boolean;
 
   constructor() {
     this.ddbClient = new DynamoDBClient({});
     this.docClient = DynamoDBDocumentClient.from(this.ddbClient);
-    this.redis = new Redis(process.env.REDIS_ENDPOINT || '');
     this.tableName = process.env.DYNAMODB_TABLE_NAME || '';
+    
+    // Initialize Redis with error handling
+    this.redisEnabled = !!process.env.REDIS_ENDPOINT;
+    if (this.redisEnabled) {
+      this.redis = new Redis(process.env.REDIS_ENDPOINT || '');
+      this.redis.on('error', (err) => {
+        logger.warn('Redis connection error:', err);
+        this.redisEnabled = false;
+      });
+    } else {
+      // Initialize with a dummy Redis instance that does nothing
+      this.redis = new Redis(null as any);
+      this.redis.disconnect();
+    }
+  }
+
+  private async tryRedisGet(key: string): Promise<string | null> {
+    if (!this.redisEnabled) return null;
+    try {
+      return await this.redis.get(key);
+    } catch (error) {
+      logger.warn(`Redis get failed for key ${key}:`, error);
+      return null;
+    }
+  }
+
+  private async tryRedisSet(key: string, value: string, ttl: number): Promise<void> {
+    if (!this.redisEnabled) return;
+    try {
+      await this.redis.set(key, value, 'EX', ttl);
+    } catch (error) {
+      logger.warn(`Redis set failed for key ${key}:`, error);
+    }
   }
 
   async getGame(gameId: string): Promise<GameBoxScore | null> {
     try {
       // Try Redis first for box score
-      const cachedBoxScore = await this.redis.get(`boxscore:${gameId}`);
+      const cachedBoxScore = await this.tryRedisGet(`boxscore:${gameId}`);
       if (cachedBoxScore) {
         logger.debug(`Box score cache hit for game ${gameId}`);
         return JSON.parse(cachedBoxScore);
       }
 
       // Try Redis for basic game data
-      const cachedGame = await this.redis.get(`game:${gameId}`);
+      const cachedGame = await this.tryRedisGet(`game:${gameId}`);
       if (cachedGame) {
         logger.debug(`Basic game cache hit for game ${gameId}, but no box score available`);
         return null;
@@ -46,21 +85,18 @@ export class GameService {
         return null;
       }
 
-      // Check if the item is a box score (has totals property)
+      // Check if the item is a box score
       const gameData = result.Item;
       if ('homeTeam' in gameData && 'totals' in gameData.homeTeam) {
-        // It's a box score
         const boxScore = gameData as GameBoxScore;
-        await this.redis.set(
+        await this.tryRedisSet(
           `boxscore:${gameId}`,
           JSON.stringify(boxScore),
-          'EX',
           60 * 5
         );
         return boxScore;
       }
 
-      // If it's just basic game data, return null for box score request
       logger.debug(`Found basic game data for ${gameId}, but no box score available`);
       return null;
     } catch (error) {
@@ -69,28 +105,113 @@ export class GameService {
     }
   }
 
+  private validateTeamStats(stats: Team['stats']): boolean {
+    // Check that stats exists and is an object
+    if (!stats || typeof stats !== 'object') return false;
+
+    // Validate required numeric properties
+    return !!(
+      typeof stats.rebounds === 'number' &&
+      typeof stats.assists === 'number' &&
+      typeof stats.blocks === 'number'
+    );
+  }
+
+  private validateGameScore(game: GameScore): ValidationResult {
+    const errors: string[] = [];
+    
+    // Required fields
+    if (!game.gameId) errors.push('gameId is required');
+    if (!game.status) errors.push('status is required');
+    if (typeof game.period !== 'number') errors.push('period must be a number');
+    
+    // Team validation
+    if (!game.homeTeam?.stats || !game.awayTeam?.stats) {
+      errors.push('both homeTeam and awayTeam must have stats');
+    } else {
+      // Validate team stats
+      if (!this.validateTeamStats(game.homeTeam.stats)) {
+        errors.push('invalid homeTeam stats');
+      }
+      if (!this.validateTeamStats(game.awayTeam.stats)) {
+        errors.push('invalid awayTeam stats');
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  private validateBoxScore(boxScore: GameBoxScore): ValidationResult {
+    const errors: string[] = [];
+    
+    // Basic validation
+    if (!boxScore.gameId) errors.push('gameId is required');
+    if (!boxScore.status) errors.push('status is required');
+    
+    // Team validation
+    if (!boxScore.homeTeam || !boxScore.awayTeam) {
+      errors.push('both homeTeam and awayTeam are required');
+    } else {
+      // Validate team box scores
+      if (!this.validateTeamBoxScore(boxScore.homeTeam)) {
+        errors.push('invalid homeTeam box score');
+      }
+      if (!this.validateTeamBoxScore(boxScore.awayTeam)) {
+        errors.push('invalid awayTeam box score');
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  private validateTeamBoxScore(team: TeamBoxScore): boolean {
+    return !!(
+      team.totals &&
+      typeof team.totals.points === 'number' &&
+      typeof team.totals.assists === 'number' &&
+      typeof team.totals.rebounds === 'number' &&
+      Array.isArray(team.players)
+    );
+  }
+
   async updateGame(game: GameScore | GameBoxScore): Promise<void> {
     try {
-      // logger.debug('Updating game data:', game);
+      // Validate data before saving
+      const validation = 'totals' in game.homeTeam 
+        ? this.validateBoxScore(game as GameBoxScore)
+        : this.validateGameScore(game as GameScore);
+
+      if (!validation.isValid) {
+        const error = new Error(`Invalid game data: ${validation.errors.join(', ')}`);
+        logger.error('Validation failed:', error);
+        throw error;
+      }
+
+      // Add required DynamoDB attributes
+      const item = {
+        ...game,
+        dataType: 'GAME',
+        ttl: Math.floor(Date.now() / 1000) + (24 * 60 * 60)
+      };
       
       // Update DynamoDB
       await this.docClient.send(new PutCommand({
         TableName: this.tableName,
-        Item: game
+        Item: item
       }));
 
-      // Store in appropriate Redis key based on type
+      // Try Redis cache update
       const isBoxScore = 'homeTeam' in game && 'totals' in game.homeTeam;
       const key = isBoxScore ? `boxscore:${game.gameId}` : `game:${game.gameId}`;
-      
-      await this.redis.set(
-        key,
-        JSON.stringify(game),
-        'EX',
-        60 * 5
-      );
+      await this.tryRedisSet(key, JSON.stringify(game), 60 * 5);
 
-      logger.debug(`Updated ${isBoxScore ? 'box score' : 'game'} data in Redis for ${game.gameId}`);
+      logger.debug(`Updated ${isBoxScore ? 'box score' : 'game'} data for ${game.gameId}`);
     } catch (error) {
       logger.error('Error updating game:', error);
       throw error;
