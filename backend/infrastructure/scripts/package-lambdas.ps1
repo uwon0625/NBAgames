@@ -60,6 +60,8 @@ function Package-Lambda {
             "config/logger.ts",
             "config/nbaApi.ts",
             "services/nbaService.ts",
+            "services/sqsService.ts",
+            "services/gameService.ts",            
             "services/mockData.ts"
         )
 
@@ -110,17 +112,20 @@ function Package-Lambda {
                 throw "TypeScript compilation produced no output files"
             }
 
-            # Create the final zip file
-            $zipPath = Join-Path $lambdaDistDir $outputPath
-            
             # Create a directory for the final package contents
             $packageDir = Join-Path $tempDir "package"
             New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
 
-            # Copy compiled files and production dependencies
-            Copy-Item -Path (Join-Path $tempDir "dist/*") -Destination $packageDir -Recurse
-            
-            # Install production dependencies only
+            # Copy the handler file to the root level
+            Get-ChildItem -Path (Join-Path $distPath "lambdas") -Filter "$functionName.js" | 
+                Copy-Item -Destination $packageDir
+
+            # Copy other directories maintaining structure
+            Copy-Item -Path (Join-Path $distPath "services") -Destination $packageDir -Recurse
+            Copy-Item -Path (Join-Path $distPath "config") -Destination $packageDir -Recurse
+            Copy-Item -Path (Join-Path $distPath "types") -Destination $packageDir -Recurse
+
+            # Install production dependencies
             Push-Location $packageDir
             try {
                 Copy-Item -Path (Join-Path $tempDir "package.json") -Destination .
@@ -135,6 +140,7 @@ function Package-Lambda {
             }
 
             # Create the zip file
+            $zipPath = Join-Path $lambdaDistDir $outputPath
             Compress-Archive -Path "$packageDir/*" -DestinationPath $zipPath -Force
 
             # Verify zip file was created and has content

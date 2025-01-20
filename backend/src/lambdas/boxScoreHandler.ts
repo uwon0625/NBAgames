@@ -1,79 +1,38 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { SQSEvent, Context } from 'aws-lambda';
-import axios from 'axios';
+import { GameService } from '../services/gameService';
+import { getGameBoxScore } from '../services/nbaService';
+import { logger } from '../config/logger';
 
-const ddbClient = new DynamoDBClient({});
-const ddb = DynamoDBDocumentClient.from(ddbClient);
+export const handler = async (event: SQSEvent, context: Context): Promise<void> => {
+  const gameService = new GameService();
 
-const NBA_BASE_URL = process.env.NBA_BASE_URL || 'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData';
+  try {
+    // Process each message from SQS
+    for (const record of event.Records) {
+      const message = JSON.parse(record.body);
+      const gameId = message.gameId;
 
-export const handler = async (event: SQSEvent, context: Context) => {
-    console.log('Box Score Handler started', { 
-        requestId: context.awsRequestId,
-        eventRecords: event.Records.length,
-        environment: {
-            NBA_BASE_URL: process.env.NBA_BASE_URL,
-            DYNAMODB_TABLE_NAME: process.env.DYNAMODB_TABLE_NAME,
-            NODE_ENV: process.env.NODE_ENV
+      logger.info(`Processing box score update for game ${gameId}`);
+
+      try {
+        // Get box score from NBA API
+        const boxScore = await getGameBoxScore(gameId);
+        if (boxScore) {
+          // Update game record with box score data
+          await gameService.updateGame(boxScore);
+          logger.debug(`Updated box score for game ${gameId}`);
+        } else {
+          logger.warn(`No box score available for game ${gameId}`);
         }
-    });
-
-    try {
-        for (const record of event.Records) {
-            console.log('Processing record', { messageId: record.messageId });
-            
-            try {
-                const game = JSON.parse(record.body);
-                console.log('Game data', { 
-                    gameId: game.gameId,
-                    status: game.gameStatus,
-                    homeTeam: game.homeTeam?.teamId,
-                    awayTeam: game.awayTeam?.teamId
-                });
-
-                // Fetch box score data
-                const boxScoreUrl = `${NBA_BASE_URL}/boxscore/boxscore_${game.gameId}.json`;
-                console.log('Fetching box score from:', boxScoreUrl);
-                
-                const response = await axios.get(boxScoreUrl);
-                
-                if (response.status === 200) {
-                    // Store in DynamoDB
-                    const params = {
-                        TableName: process.env.DYNAMODB_TABLE_NAME,
-                        Item: {
-                            gameId: game.gameId,
-                            ...game,
-                            boxScore: response.data,
-                            updatedAt: new Date().toISOString(),
-                            lastUpdate: Date.now()
-                        }
-                    };
-
-                    console.log('Storing in DynamoDB', { 
-                        tableName: params.TableName,
-                        gameId: params.Item.gameId 
-                    });
-
-                    await ddb.send(new PutCommand(params));
-                    console.log(`Successfully processed box score for game ${game.gameId}`);
-                }
-            } catch (error) {
-                console.error('Error processing record:', { 
-                    messageId: record.messageId, 
-                    error: error instanceof Error ? error.message : String(error)
-                });
-                // Don't throw here to continue processing other messages
-            }
-        }
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ message: 'Box scores processed successfully' })
-        };
-    } catch (error) {
-        console.error('Fatal error in box score handler:', error);
-        throw error;
+      } catch (error) {
+        logger.error(`Error processing box score for game ${gameId}:`, error);
+        // Don't throw here to continue processing other messages
+      }
     }
+  } catch (error) {
+    logger.error('Error in box score handler:', error);
+    throw error;
+  } finally {
+    await gameService.cleanup();
+  }
 }; 

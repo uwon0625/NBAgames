@@ -67,10 +67,11 @@ resource "aws_lambda_function" "game_update_handler" {
   filename         = "../lambda/dist/lambdas/gameUpdateHandler.zip"
   function_name    = "${var.project_name}-game-update-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "dist/lambdas/gameUpdateHandler.handler"
+  handler         = "gameUpdateHandler.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
+  source_code_hash = filebase64sha256("${path.module}/../lambda/dist/lambdas/gameUpdateHandler.zip")
 
   environment {
     variables = {
@@ -115,10 +116,11 @@ resource "aws_lambda_function" "box_score_handler" {
   filename         = "../lambda/dist/lambdas/boxScoreHandler.zip"
   function_name    = "${var.project_name}-box-score-${var.environment}"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "dist/lambdas/boxScoreHandler.handler"
+  handler         = "boxScoreHandler.handler"
   runtime         = "nodejs18.x"
   timeout         = 30
   memory_size     = 256
+  source_code_hash = filebase64sha256("${path.module}/../lambda/dist/lambdas/boxScoreHandler.zip")
 
   environment {
     variables = {
