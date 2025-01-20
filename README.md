@@ -51,3 +51,30 @@ flowchart LR
     * use_msk = false             # Don't deploy MSK
     * use_elasticache = false     # Don't deploy ElastiCache
     * use_sqs_instead_of_msk = true  # Don't use SQS in development
+
+# Instructions 
+ - clone the repo.
+ - frontend
+    * cd frontend
+    * yarn install
+    * yarn test # run unit tests
+    * yarn dev
+ - backend
+    * cd backend
+    * yarn install
+    * docker-compose up -d # start the kafka and redis services locally
+    * yarn test # run unit tests
+    * cd infrastructure/terraform
+    * terraform init
+    * terraform plan -out=tfplan
+    * terraform plan -destroy -out=tfdestroyplan 
+    * cd ../../ # back to backend
+    * ./infrastructure/scripts/deploy.ps1 # include packaging lambda functions & terraform apply
+    * yarn dev #wait a few moments to have Redis ready
+ - Useful tips:
+    * example for SQS triggered lambda function invocation: aws sqs send-message --queue-url 'https://sqs.us-east-1.amazonaws.com/886436930781/nba-live-updates-dev.fifo' --message-body '{"gameId":"0022400599","gameStatus":1,"homeTeam":{"teamId":"1610612766"},"awayTeam":{"teamId":"1610612742"}}' --message-group-id "game0022400599" 
+    * check AWS resources: backend/infrastructure/scripts/check-tf-resources.ps1
+    * check lambda functions logs:
+        * aws logs tail "/aws/lambda/nba-live-game-update-dev"
+        * aws logs tail "/aws/lambda/nba-live-box-score-dev"
+    * cleanup: terraform destroy
