@@ -72,7 +72,7 @@ flowchart LR
     * ./infrastructure/scripts/deploy.ps1 # include packaging lambda functions & terraform apply
     * yarn dev #wait a few moments to have Redis ready
  - Useful tips:
-    * example for SQS triggered lambda function invocation: aws sqs send-message --queue-url 'https://sqs.us-east-1.amazonaws.com/886436930781/nba-live-updates-dev.fifo' --message-body '{"gameId":"0022400599","gameStatus":1,"homeTeam":{"teamId":"1610612766"},"awayTeam":{"teamId":"1610612742"}}' --message-group-id "game0022400599" 
+    * example for SQS triggered lambda function invocation: aws sqs send-message --queue-url 'https://sqs.us-east-1.amazonaws.com/{account-id>/nba-live-updates-dev.fifo' --message-body '{"gameId":"0022400599","gameStatus":1,"homeTeam":{"teamId":"1610612766"},"awayTeam":{"teamId":"1610612742"}}' --message-group-id "game0022400599" 
     * check AWS resources: backend/infrastructure/scripts/check-tf-resources.ps1
     * check lambda functions logs:
         * aws logs tail "/aws/lambda/nba-live-game-update-dev"
