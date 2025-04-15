@@ -1,7 +1,7 @@
 # NBAgames
 NBA live score and alerts, it pulls most recent/scheduled games, with box score for the games. It also provides live updates.
 
-# System Diagram
+# System Diagram(Data Flow)
 ```mermaid
 %%{init: {'flowchart': {'width': 600}}}%%
 flowchart LR
