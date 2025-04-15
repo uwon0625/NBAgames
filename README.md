@@ -7,22 +7,22 @@ NBA live score and alerts, it pulls most recent/scheduled games, with box score 
 flowchart LR
     NBA["NBA API"]
     Poller["Lambda Poller"]
-    EventBridge["EventBridge\n(CloudWatch Events)"]
-    SQS["Message Queue\n(Kafka)"]
-    Lambda["Lambda Functions\n(Game Updates & Box Scores)"]
+    EventBridge["EventBridge(CloudWatch Events)"]
+    SQS["Message Queue(Kafka)"]
+    Lambda["Lambda Functions(Game Updates & Box Scores)"]
     DynamoDB["DynamoDB"]
     Redis["Redis Cache"]
-    WebSocket["WebSocket API"]
-    Client["Frontend Clients"]
+    API["API Gateway"]
+    Client["Frontend"]
 
-    NBA --> Poller
+    NBA --> Poller 
     EventBridge --> Lambda
     SQS --> Lambda
+    Poller --> DynamoDB
     Lambda --> DynamoDB
-    Lambda --> WebSocket
-    DynamoDB --> Redis
-    WebSocket --> Client
-    Redis --> Frontend 
+    DynamoDB --> API
+    Redis --> API 
+    API --> Client
 
     %% Styling
     classDef aws fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:white;
@@ -30,8 +30,8 @@ flowchart LR
     classDef external fill:#4A90E2,stroke:#2171C7,stroke-width:2px,color:white;
 
     class NBA external
-    class Poller,EventBridge,Lambda,DynamoDB,Redis,WebSocket aws
-    class Client client,Frontend
+    class Poller,EventBridge,Lambda,DynamoDB,Redis,API,SQS aws
+    class Client Frontend
 ```
 
 # Technology Stack
